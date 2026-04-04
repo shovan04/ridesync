@@ -1,12 +1,24 @@
-import { useState } from 'react'
+import { Routes, Route } from 'react-router-dom'
 import './App.css'
+import ActiveRideScreen from './screen/ActiveRideScreen'
+import About from './screen/About'
+import SessionScreen from './screen/SessionScreen'
+import ProfileScreen from './screen/ProfileScreen'
+import OffRouteAlert from './screen/OffRouteAlert'
+
+
 
 function App() {
 
   return (
-    <>
-      <h1 className='bg-amber-400'>setup done</h1>
-    </>
+   <Routes>
+      <Route path="/" element={<ActiveRideScreen />} />
+      <Route path="/about" element={<About />} />
+      <Route path="/session" element={<SessionScreen />} />
+      <Route path="/profile" element={<ProfileScreen />} />
+        <Route path="/alert/off-route" element={<OffRouteAlert />} />
+      
+    </Routes>
   )
 }
 
