@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { createUser } from "../services/userService";
+import { createUser, createRide } from "../services/api";
 import { mapProfileToUser } from "../mappers/userMapper";
 import BottomNav from "../components/bottomNav";
 import type { NavTab } from "../components/bottomNav";
 import { getActiveTab } from "../utils/getActiveTab";
+import { useAppData } from "../contexts/AppDataContext";
 import type { ProfileData } from "../types/Profile";
 import { BLOOD_GROUPS, defaultProfile } from "../data/profile";
 
@@ -12,6 +13,7 @@ import { BLOOD_GROUPS, defaultProfile } from "../data/profile";
 export default function ProfileScreen() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, setUser, setRide } = useAppData();
   const activeTab = getActiveTab(location.pathname);
   const [saved, setSaved] = useState(false);
   const [profile, setProfile] = useState<ProfileData>(defaultProfile);
@@ -39,18 +41,32 @@ export default function ProfileScreen() {
 
  async function handleSave() {
   try {
-    const payload = mapProfileToUser(profile);
+    let currentUser = user
 
-    console.log("Sending payload:", payload);
+    if (!currentUser) {
+      const payload = mapProfileToUser(profile)
+      currentUser = await createUser(payload)
+      setUser(currentUser!)
+    }
 
-    const user = await createUser(payload);
+    if (!currentUser) {
+      throw new Error('Failed to get user data')
+    }
 
-    console.log("User created:", user);
+    const rideData = {
+      userId: currentUser.id,
+      startPoint: 'Delhi',
+      endPoint: 'Manali'
+    }
 
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    const newRide = await createRide(rideData)
+    setRide(newRide)
+    console.log('Ride created:', newRide)
+
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
   } catch (err) {
-    console.error("Error creating user:", err);
+    console.error("Error:", err)
   }
 }
 

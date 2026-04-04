@@ -1,6 +1,59 @@
-import axios from "axios";
+const API_BASE_URL = 'https://bwz7qdx8-8090.inc1.devtunnels.ms/api/v1'
 
-export const api = axios.create({
-  baseURL: "http://localhost:8090/api/v1",
-});
+export async function createUser(data: {
+  name: string
+  age: number
+  email: string
+  phone: string
+  emergencyContact: string
+  address: string
+  bloodGroup: string
+  gender: string
+}) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/user`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const result = await response.json()
+    return result.data[0]
+  } catch (error) {
+    console.error('Error creating user:', error)
+    throw error
+  }
+}
+
+export async function createRide(data: {
+  userId: string
+  startPoint: string
+  endPoint: string
+}) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/rides`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const result = await response.json()
+    return result.data
+  } catch (error) {
+    console.error('Error creating ride:', error)
+    throw error
+  }
+}
 
