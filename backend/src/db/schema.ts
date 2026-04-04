@@ -47,15 +47,15 @@ export const rides = pgTable("rides", {
   startPoint: varchar({ length: 150 }).notNull(),
   endPoint: varchar({ length: 150 }).notNull(),
 
-  distance: integer("distance_km").notNull(),
-  duration: integer("duration_min").notNull(),
-  overallSpeed: integer("overall_speed").notNull(),
+  distance: integer("distance_km").notNull().default(0),
+  duration: integer("duration_min").notNull().default(0),
+  overallSpeed: integer("overall_speed").notNull().default(0),
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()
     .$onUpdate(() => new Date())
-    .notNull(),
+    .notNull(), 
 });
 
 

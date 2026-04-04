@@ -7,5 +7,6 @@ import UserController from "../../controllers/users/user.controller.js";
 const userRouter = Router();
 
 userRouter.post(UsersRoutes.CREATE_USER, validateDto(CreateUserDTO), UserController.createUser)
+userRouter.get(UsersRoutes.GET_USER_PROFILE, UserController.getUserProfile)
 
 export default userRouter;

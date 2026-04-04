@@ -14,6 +14,12 @@ export default class UserRepo {
         });
     }
     async createUser(user: CreateUserData) {
-        return await db.insert(users).values(user).execute();
+        return await db.insert(users).values(user).returning();
+    }
+
+    async getUserById(userId: string) {
+        return await db.query.users.findFirst({
+            where: (t, { eq }) => eq(t.id, userId),
+        });
     }
 }
