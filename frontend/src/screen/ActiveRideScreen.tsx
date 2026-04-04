@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import BottomNav from "../components/bottomNav";
 import type { NavTab } from "../components/bottomNav";
 import { getActiveTab } from "../utils/getActiveTab";
+import RideMapModal from "./RideMapModel";
 
 type RiderStatus = "on-route" | "off-route";
 
@@ -13,16 +14,36 @@ interface Rider {
   distanceBehind?: string;
 }
 
-const mockRiders: Rider[] = [
-  { id: "1", name: "Alex", status: "on-route" },
-  { id: "2", name: "Priya", status: "on-route" },
-  { id: "3", name: "Ahmed", status: "off-route", distanceBehind: "1.2km" },
+const mockRiders = [
+  { 
+    id: "1", 
+    name: "Alex", 
+    status: "on-route" as const,
+    lat: 28.7041,
+    lng: 77.1025
+  },
+  { 
+    id: "2", 
+    name: "Priya", 
+    status: "on-route" as const,
+    lat: 28.7050,
+    lng: 77.1035
+  },
+  { 
+    id: "3", 
+    name: "Ahmed", 
+    status: "off-route" as const,
+    distanceBehind: "1.2km",
+    lat: 28.6990,
+    lng: 77.0990
+  },
 ];
 
 export default function ActiveRideScreen() {
   const navigate = useNavigate();
   const location = useLocation();
   const [liveDot, setLiveDot] = useState(true);
+  const [mapOpen, setMapOpen] = useState(false);
   const activeTab = getActiveTab(location.pathname);
 
   useEffect(() => {
@@ -174,7 +195,8 @@ export default function ActiveRideScreen() {
         </div>
 
         {/* Speed overlay */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[55%] text-center z-10">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[55%] text-center z-10"
+         onClick={() => setMapOpen(true)}>
           <div
             className="text-white leading-none"
             style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "96px", letterSpacing: "-2px" }}
@@ -188,6 +210,11 @@ export default function ActiveRideScreen() {
             KM/H
           </div>
         </div>
+        <RideMapModal 
+          riders={mockRiders}
+          isOpen={mapOpen}
+        onClose={() => setMapOpen(false)}
+/>
 
         {/* Rider chips */}
         <div className="absolute bottom-0 left-0 right-0 z-10 px-4 pb-3 pt-12 flex gap-2 items-end"

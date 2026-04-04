@@ -16,7 +16,8 @@ function App() {
       <Route path="/about" element={<About />} />
       <Route path="/session" element={<SessionScreen />} />
       <Route path="/profile" element={<ProfileScreen />} />
-        <Route path="/alert/off-route" element={<OffRouteAlert />} />
+      <Route path="/alert/off-route" element={<OffRouteAlert />} />
+
       
     </Routes>
   )
