@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { createUser, createRide } from "../services/api";
+import { createUser, getUser, createRide, joinRide } from "../services/api";
 import { mapProfileToUser } from "../mappers/userMapper";
 import BottomNav from "../components/bottomNav";
 import type { NavTab } from "../components/bottomNav";
@@ -15,6 +15,26 @@ export default function ProfileScreen() {
   const activeTab = getActiveTab(location.pathname);
   const [saved, setSaved] = useState(false);
   const [profile, setProfile] = useState<ProfileData>(defaultProfile);
+  const [user, setUser] = useState<any>(null);
+  const [rideCode, setRideCode] = useState("");
+  const [rideLoading, setRideLoading] = useState(false);
+  const [rideMessage, setRideMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
+
+  useEffect(() => {
+    const loadUser = async () => {
+      const userId = localStorage.getItem('userId')
+      if (userId) {
+        try {
+          const userData = await getUser(userId)
+          setUser(userData)
+        } catch (error) {
+          console.error('Error loading user:', error)
+          localStorage.removeItem('userId')
+        }
+      }
+    }
+    loadUser()
+  }, [])
 
 
 
@@ -39,30 +59,61 @@ export default function ProfileScreen() {
 
  async function handleSave() {
   try {
-    const existingUserId = localStorage.getItem('userId')
-    let user
+    if (user) return
 
-    if (existingUserId) {
-      user = { id: existingUserId }
-    } else {
-      const payload = mapProfileToUser(profile)
-      user = await createUser(payload)
-      localStorage.setItem('userId', user.id)
-    }
-
-    const rideData = {
-      userId: user.id,
-      startPoint: 'Delhi',
-      endPoint: 'Manali'
-    }
-
-    const ride = await createRide(rideData)
-    console.log('Ride created:', ride)
+    const payload = mapProfileToUser(profile)
+    const userData = await createUser(payload)
+    setUser(userData)
+    localStorage.setItem('userId', userData.id)
 
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   } catch (err) {
-    console.error("Error:", err)
+    console.error("Error creating user:", err)
+  }
+}
+
+async function handleCreateRide() {
+  if (!user) return
+
+  setRideLoading(true)
+  setRideMessage(null)
+
+  try {
+    const rideData = await createRide({
+      userId: user.id,
+      startPoint: 'Delhi',
+      endPoint: 'Manali'
+    })
+    console.log('Ride created:', rideData)
+    setRideMessage({ type: 'success', text: 'Ride created successfully!' })
+  } catch (err) {
+    console.error("Error creating ride:", err)
+    setRideMessage({ type: 'error', text: 'Failed to create ride. Please try again.' })
+  } finally {
+    setRideLoading(false)
+  }
+}
+
+async function handleJoinRide() {
+  if (!user || !rideCode.trim()) return
+
+  setRideLoading(true)
+  setRideMessage(null)
+
+  try {
+    const joinData = await joinRide({
+      userId: user.id,
+      rideCode: rideCode.trim()
+    })
+    console.log('Ride joined:', joinData)
+    setRideMessage({ type: 'success', text: 'Successfully joined the ride!' })
+    setRideCode("")
+  } catch (err) {
+    console.error("Error joining ride:", err)
+    setRideMessage({ type: 'error', text: 'Failed to join ride. Please check the code and try again.' })
+  } finally {
+    setRideLoading(false)
   }
 }
 
@@ -297,6 +348,55 @@ export default function ProfileScreen() {
             </>
           )}
         </button>
+
+        {/* RIDE ACTIONS */}
+        <div className="mt-8 space-y-4">
+          <h3 className="text-[#00E5FF] font-bold text-lg uppercase tracking-wider" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+            Ride Actions
+          </h3>
+
+          {/* Create Ride Button */}
+          <button
+            onClick={handleCreateRide}
+            disabled={rideLoading}
+            className="w-full flex items-center justify-center gap-2 rounded-[14px] py-4 font-bold text-base tracking-wider uppercase transition-all active:scale-95 bg-[#00E5FF] text-black disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "1px" }}
+          >
+            {rideLoading ? "Creating..." : "Create New Ride"}
+          </button>
+
+          {/* Join Ride Section */}
+          <div className="space-y-3">
+            <Field label="Ride Code">
+              <Input
+                type="text"
+                placeholder="Enter ride code"
+                value={rideCode}
+                onChange={setRideCode}
+                dark
+              />
+            </Field>
+            <button
+              onClick={handleJoinRide}
+              disabled={rideLoading || !rideCode.trim()}
+              className="w-full flex items-center justify-center gap-2 rounded-[14px] py-4 font-bold text-base tracking-wider uppercase transition-all active:scale-95 bg-[#0d2a2e] border border-[#00E5FF] text-[#00E5FF] disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "1px" }}
+            >
+              {rideLoading ? "Joining..." : "Join Ride"}
+            </button>
+          </div>
+
+          {/* Ride Action Messages */}
+          {rideMessage && (
+            <div className={`p-3 rounded-[8px] text-center font-medium ${
+              rideMessage.type === 'success' 
+                ? 'bg-green-900/20 border border-green-500 text-green-400' 
+                : 'bg-red-900/20 border border-red-500 text-red-400'
+            }`}>
+              {rideMessage.text}
+            </div>
+          )}
+        </div>
 
       </div>
 

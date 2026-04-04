@@ -31,6 +31,22 @@ export async function createUser(data: {
   }
 }
 
+export async function getUser(userId: string) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/user/${userId}`)
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const result = await response.json()
+    return result.data
+  } catch (error) {
+    console.error('Error getting user:', error)
+    throw error
+  }
+}
+
 export async function createRide(data: {
   userId: string
   startPoint: string
@@ -53,6 +69,31 @@ export async function createRide(data: {
     return result.data
   } catch (error) {
     console.error('Error creating ride:', error)
+    throw error
+  }
+}
+
+export async function joinRide(data: {
+  userId: string
+  rideCode: string
+}) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/rides/join`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const result = await response.json()
+    return result.data
+  } catch (error) {
+    console.error('Error joining ride:', error)
     throw error
   }
 }
