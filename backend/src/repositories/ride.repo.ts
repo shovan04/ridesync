@@ -1,5 +1,5 @@
 import db from "../db/index.js";
-import { rideParticipants, rides, roleEnum } from "../db/schema.js";
+import { rideParticipants, rides, roleEnum, rideStops } from "../db/schema.js";
 import CreateRideData from "../interfaces/createRide.interface.js";
 
 export default class RideRepo {
@@ -43,6 +43,34 @@ export default class RideRepo {
             role: "rider"
         }).returning();
         return participant;
+    }
+
+    async createRideStop(stopData: {
+        rideId: string;
+        title: string;
+        stopType: "fuel" | "food" | "rest" | "tea" | "other";
+        stopPoint: string;
+        latitude: string;
+        longitude: string;
+        stopOrder: number;
+    }) {
+        const [newStop] = await db.insert(rideStops).values(stopData).returning();
+        return newStop;
+    }
+
+    async getRideStops(rideId: string) {
+        return await db.query.rideStops.findMany({
+            where: (t, { eq }) => eq(t.rideId, rideId),
+            orderBy: (t, { asc }) => asc(t.stopOrder),
+        });
+    }
+
+    async deleteRideStop(stopId: string) {
+        const { eq } = require('drizzle-orm');
+        const deleted = await db.delete(rideStops)
+            .where(eq(rideStops.id, stopId))
+            .returning();
+        return deleted[0];
     }
  
     async addRideLeader(){}
