@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { createUser } from "../services/userService";
+import { mapProfileToUser } from "../mappers/userMapper";
 import BottomNav from "../components/bottomNav";
 import type { NavTab } from "../components/bottomNav";
 import { getActiveTab } from "../utils/getActiveTab";
@@ -35,10 +37,22 @@ export default function ProfileScreen() {
     return Math.round((filled / checks.length) * 100);
   }
 
-  function handleSave() {
+ async function handleSave() {
+  try {
+    const payload = mapProfileToUser(profile);
+
+    console.log("Sending payload:", payload);
+
+    const user = await createUser(payload);
+
+    console.log("User created:", user);
+
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  } catch (err) {
+    console.error("Error creating user:", err);
   }
+}
 
   const pct = completion();
 

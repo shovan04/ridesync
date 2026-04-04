@@ -1,10 +1,14 @@
-export type RiderStatus = "on-route" | "off-route";
+export interface Ride {
+  rideId: string;
+  userId: string;
+  code: string;
+  role: string;
+  startPoint: string;
+  endPoint: string;
+}
 
-export interface Rider {
-  id: string;
-  name: string;
-  lat: number;
-  lng: number;
-  status: RiderStatus;
-  distanceBehind?: string;
+export interface CreateRidePayload {
+  userId: string;
+  startPoint: string;
+  endPoint: string;
 }
