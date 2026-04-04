@@ -2,7 +2,7 @@
   "compilerOptions": {
     /* Output */
     "outDir": "dist",
-    "rootDir": ".", // Helps structure input/output clearly
+    "rootDir": "src", // Helps structure input/output clearly
 
     /* Module system */
     "module": "nodenext",
@@ -26,6 +26,6 @@
     "allowSyntheticDefaultImports": true, // Allows default import of CJS modules
     "allowJs": true
   },
-  "include": ["src/**/*", "drizzle.config.ts"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }
