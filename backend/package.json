@@ -1,0 +1,29 @@
+{
+  "name": "ridesync",
+  "version": "1.0.0",
+  "description": "An Express Typescript project",
+  "main": "dist/bin/app.js",
+  "type": "module",
+  "scripts": {
+    "dev:build": "tsc --build -w",
+    "dev:start": "nodemon dist/bin/app.js",
+    "dev": "pnpm dev:build & pnpm dev:start"
+  },
+  "packageManager": "pnpm@10.19.0",
+  "dependencies": {
+    "class-transformer": "*",
+    "class-validator": "*",
+    "cookie-parser": "*",
+    "cors": "*",
+    "dotenv": "*",
+    "express": "*"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "*",
+    "@types/cors": "*",
+    "@types/express": "*",
+    "nodemon": "*",
+    "reflect-metadata": "*",
+    "typescript": "*"
+  }
+}
