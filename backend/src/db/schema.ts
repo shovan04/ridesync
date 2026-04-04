@@ -108,8 +108,6 @@ export const rideStops = pgTable(
     title: varchar({ length: 60 }).notNull(),
     stopType: stopTypeEnum().notNull(),
 
-    stopPoint: varchar({ length: 150 }).notNull(),
-
     latitude: numeric("latitude", { precision: 9, scale: 6 }).notNull(),
     longitude: numeric("longitude", { precision: 9, scale: 6 }).notNull(),
 
