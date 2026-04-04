@@ -1,16 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-
-interface OffRouteAlertProps {
-  name?: string;
-  lastSeen?: string;
-  minsAgo?: number;
-  lastSpeed?: number;
-  elevation?: number;
-  emergencyContacts?: string[];
-  onShare?: () => void;
-  onCall?: () => void;
-}
+import type { OffRouteAlertProps } from "../types/offRoute";
 
 export default function OffRouteAlert({
   name = "Ahmed",

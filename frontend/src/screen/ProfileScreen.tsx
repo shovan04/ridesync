@@ -3,37 +3,18 @@ import { useLocation, useNavigate } from "react-router-dom";
 import BottomNav from "../components/bottomNav";
 import type { NavTab } from "../components/bottomNav";
 import { getActiveTab } from "../utils/getActiveTab";
+import type { ProfileData } from "../types/Profile";
+import { BLOOD_GROUPS, defaultProfile } from "../data/profile";
 
-type BloodGroup = "A+" | "A-" | "B+" | "B-" | "O+" | "O-" | "AB+" | "AB-" | null;
-
-interface ProfileData {
-  name: string;
-  age: string;
-  gender: string;
-  phone: string;
-  address: string;
-  bloodGroup: BloodGroup;
-  emergencyName: string;
-  emergencyPhone: string;
-}
-
-const BLOOD_GROUPS: BloodGroup[] = ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"];
 
 export default function ProfileScreen() {
   const location = useLocation();
   const navigate = useNavigate();
   const activeTab = getActiveTab(location.pathname);
   const [saved, setSaved] = useState(false);
-  const [profile, setProfile] = useState<ProfileData>({
-    name: "Md Yousuf",
-    age: "",
-    gender: "male",
-    phone: "",
-    address: "",
-    bloodGroup: null,
-    emergencyName: "",
-    emergencyPhone: "",
-  });
+  const [profile, setProfile] = useState<ProfileData>(defaultProfile);
+
+
 
   function update<K extends keyof ProfileData>(key: K, value: ProfileData[K]) {
     setProfile((prev) => ({ ...prev, [key]: value }));

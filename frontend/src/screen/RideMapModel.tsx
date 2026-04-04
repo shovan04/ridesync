@@ -1,21 +1,8 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-
-interface RiderLocation {
-  id: string;
-  name: string;
-  lat: number;
-  lng: number;
-  status: "on-route" | "off-route";
-  distanceBehind?: string;
-}
-
-interface RideMapModalProps {
-  riders: RiderLocation[];
-  isOpen: boolean;
-  onClose: () => void;
-}
+import type { RideMapModalProps } from "../data/map";
+import { calculateMapCenter, createRiderMarker } from "../components/RideMapModal";
 
 export default function RideMapModal({ riders, isOpen, onClose }: RideMapModalProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -40,10 +27,7 @@ export default function RideMapModal({ riders, isOpen, onClose }: RideMapModalPr
       if (!mapContainer.current) return;
 
       // Initialize map - center on first rider or average of all riders
-      const centerLat =
-        riders.reduce((sum, r) => sum + r.lat, 0) / riders.length || 28.7041;
-      const centerLng =
-        riders.reduce((sum, r) => sum + r.lng, 0) / riders.length || 77.1025;
+      const [centerLat, centerLng] = calculateMapCenter(riders);
 
       map.current = L.map(mapContainer.current, {
         center: [centerLat, centerLng],
@@ -60,26 +44,9 @@ export default function RideMapModal({ riders, isOpen, onClose }: RideMapModalPr
       // Add riders markers
       riders.forEach((rider) => {
         const isAlert = rider.status === "off-route";
-        const markerColor = isAlert ? "#ff4444" : "#00E5FF";
 
         // Create custom icon
-        const icon = L.divIcon({
-          html: `
-            <div class="flex flex-col items-center">
-              <div class="relative flex items-center justify-center">
-                <div class="absolute w-8 h-8 rounded-full border-2 border-[${markerColor}] animate-pulse"
-                  style="border-color: ${markerColor}; opacity: 0.3;"></div>
-                <div class="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold"
-                  style="background-color: ${markerColor};">
-                  ${rider.name.charAt(0)}
-                </div>
-              </div>
-            </div>
-          `,
-          className: "rider-marker",
-          iconSize: [32, 32],
-          iconAnchor: [16, 16],
-        });
+        const icon = createRiderMarker(rider);
 
         const marker = L.marker([rider.lat, rider.lng], { icon }).addTo(
           map.current!
