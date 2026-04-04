@@ -24,6 +24,7 @@ export const users = pgTable("users", {
 
   phone: varchar({ length: 15 }).notNull().unique(),
   email: varchar({ length: 255 }).notNull().unique(),
+  emergencyContact: varchar({ length: 15 }).notNull(),
 
   address: varchar({ length: 255 }).notNull(),
   bloodGroup: varchar({ length: 4 }).notNull(),
