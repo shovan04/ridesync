@@ -5,7 +5,6 @@ import { mapProfileToUser } from "../mappers/userMapper";
 import BottomNav from "../components/bottomNav";
 import type { NavTab } from "../components/bottomNav";
 import { getActiveTab } from "../utils/getActiveTab";
-import { useAppData } from "../contexts/AppDataContext";
 import type { ProfileData } from "../types/Profile";
 import { BLOOD_GROUPS, defaultProfile } from "../data/profile";
 
@@ -13,7 +12,6 @@ import { BLOOD_GROUPS, defaultProfile } from "../data/profile";
 export default function ProfileScreen() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, setUser, setRide } = useAppData();
   const activeTab = getActiveTab(location.pathname);
   const [saved, setSaved] = useState(false);
   const [profile, setProfile] = useState<ProfileData>(defaultProfile);
@@ -41,27 +39,25 @@ export default function ProfileScreen() {
 
  async function handleSave() {
   try {
-    let currentUser = user
+    const existingUserId = localStorage.getItem('userId')
+    let user
 
-    if (!currentUser) {
+    if (existingUserId) {
+      user = { id: existingUserId }
+    } else {
       const payload = mapProfileToUser(profile)
-      currentUser = await createUser(payload)
-      setUser(currentUser!)
-    }
-
-    if (!currentUser) {
-      throw new Error('Failed to get user data')
+      user = await createUser(payload)
+      localStorage.setItem('userId', user.id)
     }
 
     const rideData = {
-      userId: currentUser.id,
+      userId: user.id,
       startPoint: 'Delhi',
       endPoint: 'Manali'
     }
 
-    const newRide = await createRide(rideData)
-    setRide(newRide)
-    console.log('Ride created:', newRide)
+    const ride = await createRide(rideData)
+    console.log('Ride created:', ride)
 
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
