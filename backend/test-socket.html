@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RideSync Location Tracking Test</title>
+    <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .connected {
+            background: #d4edda;
+            color: #155724;
+        }
+        .disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        input, button {
+            padding: 10px;
+            margin: 5px 0;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .log {
+            background: #f8f9fa;
+            padding: 15px;
+            margin-top: 20px;
+            border-radius: 5px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 3px solid #007bff;
+            padding-left: 10px;
+        }
+        .error {
+            border-left-color: #dc3545;
+            color: #dc3545;
+        }
+        .success {
+            border-left-color: #28a745;
+            color: #28a745;
+        }
+        .warning {
+            border-left-color: #ffc107;
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏍️ RideSync Real-Time Location Test</h1>
+        
+        <div id="status" class="status disconnected">Disconnected</div>
+        
+        <h3>Connection Settings</h3>
+        <input type="text" id="serverUrl" placeholder="Server URL" value="http://localhost:8090">
+        <button onclick="connect()">Connect</button>
+        <button onclick="disconnect()" id="disconnectBtn" disabled>Disconnect</button>
+        
+        <h3>Ride Information</h3>
+        <input type="text" id="rideId" placeholder="Ride ID (e.g., ride-123)">
+        <input type="text" id="userId" placeholder="User ID (e.g., user-456)">
+        <button onclick="joinRide()" id="joinBtn" disabled>Join Ride</button>
+        
+        <h3>Location Simulation</h3>
+        <button onclick="startSimulation()" id="simBtn" disabled>Start Location Simulation</button>
+        <button onclick="stopSimulation()" id="stopSimBtn" disabled>Stop Simulation</button>
+        
+        <h3>Manual Location Update</h3>
+        <input type="number" id="lat" placeholder="Latitude" step="0.000001" value="40.7128">
+        <input type="number" id="lng" placeholder="Longitude" step="0.000001" value="-74.0060">
+        <button onclick="sendManualLocation()" id="manualBtn" disabled>Send Location</button>
+        
+        <h3>Event Log</h3>
+        <div id="log" class="log"></div>
+    </div>
+
+    <script>
+        let socket = null;
+        let simulationInterval = null;
+        let currentLat = 40.7128;
+        let currentLng = -74.0060;
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.insertBefore(entry, logDiv.firstChild);
+            
+            // Keep only last 50 entries
+            while (logDiv.children.length > 50) {
+                logDiv.removeChild(logDiv.lastChild);
+            }
+        }
+
+        function updateStatus(connected) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = connected ? '✅ Connected' : '❌ Disconnected';
+            statusDiv.className = `status ${connected ? 'connected' : 'disconnected'}`;
+            
+            document.getElementById('disconnectBtn').disabled = !connected;
+            document.getElementById('joinBtn').disabled = !connected;
+            document.getElementById('manualBtn').disabled = !connected;
+        }
+
+        function connect() {
+            const serverUrl = document.getElementById('serverUrl').value;
+            
+            if (socket) {
+                socket.disconnect();
+            }
+
+            socket = io(serverUrl, {
+                transports: ['websocket', 'polling'],
+            });
+
+            socket.on('connect', () => {
+                log('Connected to server: ' + socket.id, 'success');
+                updateStatus(true);
+            });
+
+            socket.on('disconnect', () => {
+                log('Disconnected from server', 'error');
+                updateStatus(false);
+                stopSimulation();
+            });
+
+            socket.on('location:initialState', (data) => {
+                log(`Received initial state: ${data.riders.length} riders`, 'success');
+                console.log('Initial state:', data);
+            });
+
+            socket.on('location:broadcast', (data) => {
+                log(`📍 Rider ${data.userId.substring(0, 8)}... at (${data.lat.toFixed(4)}, ${data.lng.toFixed(4)})`);
+            });
+
+            socket.on('gap:alert', (data) => {
+                log(`⚠️ GAP ALERT: ${data.distance.toFixed(0)}m between riders`, 'warning');
+            });
+
+            socket.on('user:left', (data) => {
+                log(`👋 User ${data.userId.substring(0, 8)}... left ride`, 'warning');
+            });
+
+            socket.on('error', (data) => {
+                log(`❌ Error: ${data.message}`, 'error');
+            });
+        }
+
+        function disconnect() {
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+                updateStatus(false);
+                stopSimulation();
+            }
+        }
+
+        function joinRide() {
+            const rideId = document.getElementById('rideId').value;
+            const userId = document.getElementById('userId').value;
+
+            if (!rideId || !userId) {
+                log('Please enter both Ride ID and User ID', 'error');
+                return;
+            }
+
+            socket.emit('ride:join', { rideId, userId });
+            log(`Joining ride ${rideId} as ${userId}`, 'success');
+            
+            document.getElementById('simBtn').disabled = false;
+        }
+
+        function sendManualLocation() {
+            const lat = parseFloat(document.getElementById('lat').value);
+            const lng = parseFloat(document.getElementById('lng').value);
+
+            if (isNaN(lat) || isNaN(lng)) {
+                log('Invalid coordinates', 'error');
+                return;
+            }
+
+            socket.emit('location:update', { lat, lng });
+            log(`Sent manual location: (${lat.toFixed(6)}, ${lng.toFixed(6)})`, 'success');
+        }
+
+        function startSimulation() {
+            if (simulationInterval) {
+                log('Simulation already running', 'warning');
+                return;
+            }
+
+            log('Starting location simulation (updates every 5s)', 'success');
+            document.getElementById('simBtn').disabled = true;
+            document.getElementById('stopSimBtn').disabled = false;
+
+            simulationInterval = setInterval(() => {
+                // Simulate movement (small random changes)
+                currentLat += (Math.random() - 0.5) * 0.001;
+                currentLng += (Math.random() - 0.5) * 0.001;
+
+                socket.emit('location:update', {
+                    lat: currentLat,
+                    lng: currentLng,
+                    speed: Math.random() * 60, // Random speed 0-60 km/h
+                    heading: Math.random() * 360, // Random heading
+                });
+
+                log(`📡 Simulated location: (${currentLat.toFixed(6)}, ${currentLng.toFixed(6)})`);
+            }, 5000);
+        }
+
+        function stopSimulation() {
+            if (simulationInterval) {
+                clearInterval(simulationInterval);
+                simulationInterval = null;
+                log('Location simulation stopped', 'warning');
+                document.getElementById('simBtn').disabled = false;
+                document.getElementById('stopSimBtn').disabled = true;
+            }
+        }
+
+        // Auto-connect on page load
+        window.onload = () => {
+            log('Page loaded. Click "Connect" to start.', 'info');
+        };
+    </script>
+</body>
+</html>

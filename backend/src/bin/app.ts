@@ -1,10 +1,12 @@
 import "reflect-metadata";
 import express from "express";
+import { createServer } from "http";
 import dotenv from "dotenv";
 import mainRouter from "../routes/index.js";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import GlobalErrorHandler from "../middlewares/globalErrorHandler.js";
+import socketServer from "../services/location/socketServer.js";
 
 dotenv.config();
 
@@ -14,6 +16,7 @@ const BASE_API_PATH = process.env.BASE_API_PATH || "/api/v1";
 const COOKIE_SECRET = process.env.COOKIE_SECRET || "default_cookie_secret";
 
 const server = express();
+const httpServer = createServer(server);
 
 server.use(cors())
 server.use(express.json());
@@ -23,11 +26,28 @@ server.use(cookieParser(COOKIE_SECRET));
 // Registering Main Router
 server.use(BASE_API_PATH, mainRouter);
 // Global Error Handler Middleware
-server.use(GlobalErrorHandler)
+server.use(GlobalErrorHandler);
 
-server.listen(Number(PORT), HOST, () => {
+// Initialize Socket.IO server for real-time location tracking
+socketServer.initialize(httpServer);
+
+httpServer.listen(Number(PORT), HOST, () => {
     console.log(
-        "Server is running at http://" +
+        "🚀 Server is running at http://" +
         HOST + ":" + PORT + BASE_API_PATH
     );
+    console.log(`📡 Socket.IO server ready on ws://${HOST}:${PORT}`);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+    console.log('SIGTERM received. Shutting down gracefully...');
+    await socketServer.shutdown();
+    process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+    console.log('SIGINT received. Shutting down gracefully...');
+    await socketServer.shutdown();
+    process.exit(0);
 });
