@@ -36,6 +36,7 @@ export default function ActiveRideScreen() {
   const mapInstance = useRef<L.Map | null>(null);
   const markersRef = useRef<{ [key: string]: L.Marker }>({});
   const routeLineRef = useRef<L.Polyline | null>(null);
+  const stopMarkersRef = useRef<Array<L.Marker | L.CircleMarker>>([]);
 
   useEffect(() => {
     const interval = setInterval(() => setLiveDot((v) => !v), 1000);
@@ -76,6 +77,19 @@ export default function ActiveRideScreen() {
     updateMapMarkers();
     
   }, [participants, liveLocations, rideDetails]);
+  
+  // Revalidate map size when modal closes (small map becomes visible again)
+  useEffect(() => {
+    if (!mapOpen && mapInstance.current && rideDetails) {
+      // Modal just closed, revalidate map size
+      setTimeout(() => {
+        if (mapInstance.current) {
+          mapInstance.current.invalidateSize();
+          console.log('📐 Small map revalidated after modal close');
+        }
+      }, 50);
+    }
+  }, [mapOpen]);
   
   // Get initial location for current user if not available
   useEffect(() => {
@@ -256,6 +270,10 @@ export default function ActiveRideScreen() {
       routeLineRef.current.remove();
     }
     
+    // Remove existing stop markers
+    stopMarkersRef.current.forEach(marker => marker.remove());
+    stopMarkersRef.current = [];
+    
     try {
       // Parse coordinates
       const [startLat, startLng] = startPoint.split(',').map(Number);
@@ -266,41 +284,180 @@ export default function ActiveRideScreen() {
         return;
       }
       
-      // Draw dashed route line
+      // Build waypoints array: start -> stops -> end
+      const waypoints: [number, number][] = [[startLat, startLng]];
+      
+      // Add stop points if any
+      // Note: We'll fetch stops separately and add them here
+      
+      waypoints.push([endLat, endLng]);
+      
+      // Draw polyline through all waypoints
       routeLineRef.current = L.polyline(
-        [[startLat, startLng], [endLat, endLng]],
+        waypoints,
         {
           color: '#00E5FF',
-          weight: 4,
+          weight: 5,
           opacity: 0.8,
-          dashArray: '10, 10',
+          dashArray: '12, 10',
           lineCap: 'round',
+          lineJoin: 'round',
         }
       ).addTo(mapInstance.current);
       
       // Add start marker
-      L.circleMarker([startLat, startLng], {
-        radius: 8,
+      const startMarker = L.circleMarker([startLat, startLng], {
+        radius: 10,
         fillColor: '#22c55e',
         color: '#fff',
-        weight: 2,
+        weight: 3,
         opacity: 1,
         fillOpacity: 0.9,
-      }).addTo(mapInstance.current).bindPopup('🟢 Start Point');
+      }).addTo(mapInstance.current).bindPopup('<b>🟢 Start Point</b>');
       
       // Add end marker
-      L.circleMarker([endLat, endLng], {
-        radius: 8,
+      const endMarker = L.circleMarker([endLat, endLng], {
+        radius: 10,
         fillColor: '#ef4444',
         color: '#fff',
-        weight: 2,
+        weight: 3,
         opacity: 1,
         fillOpacity: 0.9,
-      }).addTo(mapInstance.current).bindPopup('🔴 End Point');
+      }).addTo(mapInstance.current).bindPopup('<b>🔴 End Point</b>');
       
-      console.log('✅ Route drawn from start to end');
+      console.log('✅ Route drawn with', waypoints.length, 'waypoints');
     } catch (error) {
       console.error('❌ Error drawing route:', error);
+    }
+  }
+  
+  async function fetchAndDrawStops(rideId: string) {
+    try {
+      // Import the API function
+      const { getRideStops } = await import('../services/api');
+      const stops = await getRideStops(rideId);
+      
+      console.log('🛑 Fetching ride stops:', stops.length);
+      
+      if (!mapInstance.current || stops.length === 0) {
+        console.log('ℹ️ No stops to display for this ride');
+        return;
+      }
+      
+      // Clear existing stop markers
+      stopMarkersRef.current.forEach(marker => marker.remove());
+      stopMarkersRef.current = [];
+      
+      // Add markers for each stop
+      stops.forEach((stop: any, index: number) => {
+        const lat = parseFloat(stop.latitude);
+        const lng = parseFloat(stop.longitude);
+        
+        if (isNaN(lat) || isNaN(lng)) return;
+        
+        // Different colors for different stop types
+        const stopColors: Record<string, string> = {
+          fuel: '#f59e0b',    // Orange
+          food: '#ec4899',    // Pink
+          rest: '#8b5cf6',    // Purple
+          tea: '#06b6d4',     // Cyan
+          other: '#6b7280',   // Gray
+        };
+        
+        const color = stopColors[stop.stopType] || '#6b7280';
+        const icons: Record<string, string> = {
+          fuel: '⛽',
+          food: '🍔',
+          rest: '🛑',
+          tea: '☕',
+          other: '📍',
+        };
+        
+        const icon = icons[stop.stopType] || '📍';
+        
+        const stopMarker = L.circleMarker([lat, lng], {
+          radius: 10,
+          fillColor: color,
+          color: '#fff',
+          weight: 2,
+          opacity: 1,
+          fillOpacity: 0.9,
+        }).addTo(mapInstance.current!).bindPopup(`
+          <div style="font-family: 'Barlow', sans-serif; padding: 8px;">
+            <div style="font-weight: 600; font-size: 14px; color: #00E5FF;">${icon} ${stop.title}</div>
+            <div style="color: #888; font-size: 12px; margin-top: 4px;">Stop #${stop.stopOrder}</div>
+            <div style="color: #666; font-size: 11px; margin-top: 2px; text-transform: uppercase;">${stop.stopType}</div>
+          </div>
+        `);
+        
+        stopMarkersRef.current.push(stopMarker);
+      });
+      
+      console.log(`✅ Added ${stops.length} stop markers to map`);
+      
+      // Update route line to include stops
+      if (rideDetails?.startPoint && rideDetails?.endPoint) {
+        drawRouteWithStops(rideDetails.startPoint, rideDetails.endPoint, stops);
+      }
+    } catch (error: any) {
+      // Don't break if stops endpoint doesn't exist or returns 404
+      if (error.message?.includes('404')) {
+        console.log('ℹ️ Ride stops endpoint not available (this is okay - no stops added yet)');
+      } else {
+        console.error('❌ Error fetching stops:', error);
+      }
+    }
+  }
+  
+  function drawRouteWithStops(startPoint: string, endPoint: string, stops: any[]) {
+    if (!mapInstance.current) return;
+    
+    // Remove existing route line
+    if (routeLineRef.current) {
+      routeLineRef.current.remove();
+    }
+    
+    try {
+      // Parse coordinates
+      const [startLat, startLng] = startPoint.split(',').map(Number);
+      const [endLat, endLng] = endPoint.split(',').map(Number);
+      
+      if (isNaN(startLat) || isNaN(startLng) || isNaN(endLat) || isNaN(endLng)) {
+        console.error('❌ Invalid route coordinates');
+        return;
+      }
+      
+      // Build waypoints array: start -> stops (in order) -> end
+      const waypoints: [number, number][] = [[startLat, startLng]];
+      
+      // Add stops in order
+      const sortedStops = [...stops].sort((a, b) => a.stopOrder - b.stopOrder);
+      sortedStops.forEach((stop: any) => {
+        const lat = parseFloat(stop.latitude);
+        const lng = parseFloat(stop.longitude);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          waypoints.push([lat, lng]);
+        }
+      });
+      
+      waypoints.push([endLat, endLng]);
+      
+      // Draw polyline through all waypoints
+      routeLineRef.current = L.polyline(
+        waypoints,
+        {
+          color: '#00E5FF',
+          weight: 5,
+          opacity: 0.8,
+          dashArray: '12, 10',
+          lineCap: 'round',
+          lineJoin: 'round',
+        }
+      ).addTo(mapInstance.current);
+      
+      console.log('✅ Route drawn with', waypoints.length, 'waypoints (including stops)');
+    } catch (error) {
+      console.error('❌ Error drawing route with stops:', error);
     }
   }
   
@@ -328,6 +485,9 @@ export default function ActiveRideScreen() {
       // Fetch participants if we have rideId
       if (data.rideId) {
         await fetchParticipants(data.rideId);
+        
+        // Fetch and draw stops
+        await fetchAndDrawStops(data.rideId);
         
         // Connect to Socket.IO for real-time updates
         if (userId) {
@@ -390,7 +550,7 @@ export default function ActiveRideScreen() {
     socketService.onRiderLocationUpdate((data) => {
       console.log('📍 Location update received:', data);
       
-      // Update live locations map
+      // Update live locations map with correct field names
       setLiveLocations((prev) => {
         const newMap = new Map(prev);
         newMap.set(data.userId, {
@@ -718,12 +878,17 @@ export default function ActiveRideScreen() {
 
       {/* MAP AREA */}
       <div className="flex-1 relative overflow-hidden" style={{ minHeight: '300px' }}>
-        {/* Live Leaflet Map */}
+        {/* Live Leaflet Map - Hidden when modal is open (but kept in DOM) */}
         {rideDetails && (
           <div 
             ref={mapContainer} 
             className="absolute inset-0 bg-[#0d0d0d]"
-            style={{ width: '100%', height: '100%' }}
+            style={{ 
+              width: '100%', 
+              height: '100%',
+              visibility: mapOpen ? 'hidden' : 'visible', // Hide but keep in DOM
+              pointerEvents: mapOpen ? 'none' : 'auto' // Disable clicks when hidden
+            }}
             onClick={() => setMapOpen(true)}
           />
         )}
@@ -932,4 +1097,4 @@ function GroupIcon() {
       <path d="M17 15c0-2.8-2.2-5-5-5" stroke="#888" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
-}
+} 

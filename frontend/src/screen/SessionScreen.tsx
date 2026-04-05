@@ -163,8 +163,8 @@ export default function SessionScreen() {
             title: stop.title,
             stopType: stop.stopType as 'fuel' | 'food' | 'rest' | 'tea' | 'other',
             stopPoint: stop.address || `${stop.lat.toFixed(6)},${stop.lng.toFixed(6)}`,
-            latitude: stop.lat.toString(),
-            longitude: stop.lng.toString(),
+            latitude: stop.lat,  // Send as number, not string
+            longitude: stop.lng,  // Send as number, not string
             stopOrder: i + 1
           });
         }

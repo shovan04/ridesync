@@ -8,19 +8,28 @@ export default function RideMapModal({ riders, isOpen, onClose }: RideMapModalPr
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const markersRef = useRef<{ [key: string]: L.Marker }>({});
+  const routeLineRef = useRef<L.Polyline | null>(null);
 
   useEffect(() => {
+    console.log('📱 Modal useEffect triggered:', { isOpen, ridersCount: riders.length });
+    
     if (!isOpen) {
       // Clean up map when modal is closed
       if (map.current) {
         map.current.remove();
         map.current = null;
         markersRef.current = {};
+        routeLineRef.current = null;
       }
       return;
     }
 
-    if (!mapContainer.current || map.current) return;
+    if (!mapContainer.current || map.current) {
+      console.log('⚠️ Map container not ready or map already exists');
+      return;
+    }
+
+    console.log('🗺️ Initializing modal map with', riders.length, 'riders');
 
     // Small delay to ensure modal is fully rendered
     setTimeout(() => {
@@ -28,11 +37,12 @@ export default function RideMapModal({ riders, isOpen, onClose }: RideMapModalPr
 
       // Initialize map - center on first rider or average of all riders
       const [centerLat, centerLng] = calculateMapCenter(riders);
+      console.log('📍 Map center:', { centerLat, centerLng });
 
       map.current = L.map(mapContainer.current, {
         center: [centerLat, centerLng],
         zoom: 15,
-        zoomControl: false,
+        zoomControl: true, // Enable zoom controls in modal
       });
 
       // Dark mode tile layer
@@ -42,6 +52,7 @@ export default function RideMapModal({ riders, isOpen, onClose }: RideMapModalPr
       }).addTo(map.current);
 
       // Add riders markers
+      console.log('🚴 Adding', riders.length, 'rider markers');
       riders.forEach((rider) => {
         const isAlert = rider.status === "off-route";
 
@@ -69,18 +80,21 @@ export default function RideMapModal({ riders, isOpen, onClose }: RideMapModalPr
 
         marker.bindPopup(popupContent, { className: "custom-popup" });
         markersRef.current[rider.id] = marker;
+        console.log(`✅ Marker added for ${rider.name} at [${rider.lat}, ${rider.lng}]`);
       });
 
       // Fit bounds to all markers
       if (riders.length > 0) {
         const bounds = L.latLngBounds(riders.map((r) => [r.lat, r.lng]));
         map.current.fitBounds(bounds, { padding: [80, 80] });
+        console.log('🗺️ Map fitted to show all riders');
       }
 
       // Force map to recalculate size after initialization
       setTimeout(() => {
         if (map.current) {
           map.current.invalidateSize();
+          console.log('📐 Modal map size invalidated');
         }
       }, 200);
     }, 100);

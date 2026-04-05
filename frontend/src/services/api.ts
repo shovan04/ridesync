@@ -179,8 +179,8 @@ export async function addRideStop(data: {
   title: string
   stopType: 'fuel' | 'food' | 'rest' | 'tea' | 'other'
   stopPoint: string
-  latitude: string
-  longitude: string
+  latitude: number  // Changed from string to number
+  longitude: number  // Changed from string to number
   stopOrder: number
 }) {
   try {
@@ -216,6 +216,22 @@ export async function getRideParticipants(rideId: string) {
     return result.data
   } catch (error) {
     console.error('Error getting ride participants:', error)
+    throw error
+  }
+}
+
+export async function getRideStops(rideId: string) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/rides/stops/${rideId}`)
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const result = await response.json()
+    return result.data
+  } catch (error) {
+    console.error('Error getting ride stops:', error)
     throw error
   }
 }

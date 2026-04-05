@@ -9,8 +9,8 @@ export default class RideStopService {
      * Add a stop to a ride
      */
     public async addStop(stopData: CreateRideStopDTO): Promise<RideStopResponseDTO> {
-        // Verify ride exists
-        const ride = await this.repo.getRideByCode(stopData.rideId);
+        // Verify ride exists (use rideId, not code)
+        const ride = await this.repo.getRideById(stopData.rideId);
         if (!ride) {
             throw new Error("Ride not found");
         }

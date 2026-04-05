@@ -142,16 +142,18 @@ class SocketService {
    */
   onRiderLocationUpdate(callback: (data: {
     userId: string;
+    rideId: string;
     latitude: number;
     longitude: number;
     speed?: number;
     heading?: number;
-    timestamp: string;
+    timestamp: number;
   }) => void): void {
     if (!this.socket) return;
 
-    this.socket.on('riderLocationUpdate', callback);
-    console.log('📡 Listening for rider location updates');
+    // Listen to the actual backend event name
+    this.socket.on('location:broadcast', callback);
+    console.log('📡 Listening for rider location updates (location:broadcast)');
   }
 
   /**

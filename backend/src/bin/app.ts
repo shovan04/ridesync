@@ -20,8 +20,8 @@ const httpServer = createServer(server);
 
 server.use(cors())
 server.use(express.json());
-server.use(express.urlencoded({ extended: true }));
-server.use(cookieParser(COOKIE_SECRET));
+server.use(express.urlencoded({ extended: true })); 
+server.use(cookieParser(COOKIE_SECRET)); 
 
 // Registering Main Router
 server.use(BASE_API_PATH, mainRouter);
