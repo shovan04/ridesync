@@ -6,6 +6,7 @@ import { getActiveTab } from "../utils/getActiveTab";
 import RideMapModal from "./RideMapModel";
 import type { Rider } from "../types/rider";
 import { mockRiders } from "../data/rider";
+import { getRideByCode, startRide } from "../services/api";
 
 export default function ActiveRideScreen() {
   const navigate = useNavigate();
@@ -13,11 +14,72 @@ export default function ActiveRideScreen() {
   const [liveDot, setLiveDot] = useState(true);
   const [mapOpen, setMapOpen] = useState(false);
   const activeTab = getActiveTab(location.pathname);
+  
+  // Ride details state
+  const [rideCode, setRideCode] = useState("");
+  const [rideDetails, setRideDetails] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [startingRide, setStartingRide] = useState(false);
 
   useEffect(() => {
     const interval = setInterval(() => setLiveDot((v) => !v), 1000);
     return () => clearInterval(interval);
   }, []);
+  
+  // Load ride code from localStorage on mount
+  useEffect(() => {
+    const savedRideCode = localStorage.getItem('currentRideCode');
+    if (savedRideCode) {
+      setRideCode(savedRideCode);
+      fetchRideDetails(savedRideCode);
+    }
+  }, []);
+  
+  async function fetchRideDetails(code: string) {
+    if (!code.trim()) return;
+    
+    setLoading(true);
+    setError("");
+    
+    try {
+      const data = await getRideByCode(code);
+      setRideDetails(data);
+      localStorage.setItem('currentRideCode', code);
+    } catch (err: any) {
+      console.error('Error fetching ride:', err);
+      setError(err.message || 'Ride not found');
+      setRideDetails(null);
+    } finally {
+      setLoading(false);
+    }
+  }
+  
+  function handleSearchRide() {
+    fetchRideDetails(rideCode);
+  }
+  
+  async function handleStartRide() {
+    const userId = localStorage.getItem('userId');
+    if (!userId || !rideDetails) {
+      setError('User ID or ride details not found');
+      return;
+    }
+    
+    setStartingRide(true);
+    setError("");
+    
+    try {
+      await startRide(rideDetails.rideId, userId);
+      // Refresh ride details to get updated status
+      await fetchRideDetails(rideDetails.code);
+    } catch (err: any) {
+      console.error('Error starting ride:', err);
+      setError(err.message || 'Failed to start ride');
+    } finally {
+      setStartingRide(false);
+    }
+  }
 
   const handleTabChange = (tab: NavTab) => {
     const routes: Record<NavTab, string> = {
@@ -62,60 +124,134 @@ export default function ActiveRideScreen() {
               className="w-1.5 h-1.5 rounded-full bg-[#00E5FF] inline-block"
               style={{ opacity: liveDot ? 1 : 0.3, transition: "opacity 0.3s" }}
             />
-            <span>Live · 5 riders</span>
+            <span>{rideDetails ? `Live · ${rideDetails.participantCount || 0} riders` : 'No active ride'}</span>
           </span>
         </StatusItem>
         <StatusItem label="Battery">88%</StatusItem>
         <StatusItem label="Weather" last>24°C</StatusItem>
       </div>
 
-      {/* NAV CARD */}
-      <div className="mx-4 mb-4 bg-[#111] border border-[#1e1e1e] rounded-2xl p-4 flex flex-col gap-3">
-        {/* Turn instruction */}
-        <div className="flex items-center gap-3.5">
-          <div className="w-14 h-14 rounded-[14px] bg-[#00E5FF] flex items-center justify-center flex-shrink-0">
-            <TurnLeftIcon />
-          </div>
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[9px] tracking-[1.5px] text-[#555] uppercase font-semibold"
-              style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
-              In 400m
-            </span>
-            <span
-              className="text-white leading-none text-3xl"
-              style={{ fontFamily: "'Bebas Neue', sans-serif", letterSpacing: "1px" }}
+      {/* RIDE DETAILS OR INPUT */}
+      {rideDetails ? (
+        // Show ride details
+        <div className="mx-4 mb-4 bg-[#111] border border-[#1e1e1e] rounded-2xl p-4 flex flex-col gap-3">
+          {/* Ride Code Header */}
+          <div className="flex items-center justify-between pb-3 border-b border-[#1e1e1e]">
+            <div>
+              <p className="text-[9px] tracking-[1.5px] text-[#555] uppercase font-semibold" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                Room Code
+              </p>
+              <p className="text-[#00E5FF] text-2xl font-bold font-mono tracking-widest">{rideDetails.code}</p>
+            </div>
+            <button
+              onClick={() => {
+                setRideDetails(null);
+                setRideCode("");
+                localStorage.removeItem('currentRideCode');
+              }}
+              className="text-[#888] hover:text-white transition-colors text-xs px-3 py-1.5 rounded-lg border border-[#222] hover:border-[#333]"
+              style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
             >
-              Left on
-              <br />
-              Rohtang Pass
-            </span>
+              Change
+            </button>
           </div>
-        </div>
 
-        {/* Distance / Arrival */}
-        <div className="grid grid-cols-2 border-t border-[#1e1e1e] pt-3 gap-1">
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[9px] tracking-[1.5px] text-[#444] uppercase font-semibold"
-              style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
-              Distance
-            </span>
-            <span className="text-[#00E5FF] text-2xl font-bold leading-none"
-              style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
-              12.4 <span className="text-sm text-[#444]">km</span>
-            </span>
+          {/* Route Info */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[9px] tracking-[1.5px] text-[#444] uppercase font-semibold" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                Start Point
+              </span>
+              <span className="text-white text-sm font-medium truncate" title={rideDetails.startPoint}>
+                {rideDetails.startPoint}
+              </span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[9px] tracking-[1.5px] text-[#444] uppercase font-semibold" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                End Point
+              </span>
+              <span className="text-white text-sm font-medium truncate" title={rideDetails.endPoint}>
+                {rideDetails.endPoint}
+              </span>
+            </div>
           </div>
-          <div className="flex flex-col gap-0.5 pl-4 border-l border-[#1e1e1e]">
-            <span className="text-[9px] tracking-[1.5px] text-[#444] uppercase font-semibold"
-              style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
-              Arrival
-            </span>
-            <span className="text-[#00E5FF] text-2xl font-bold leading-none"
-              style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
-              14:42
-            </span>
+
+          {/* Stats */}
+          <div className="grid grid-cols-3 border-t border-[#1e1e1e] pt-3 gap-2">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[9px] tracking-[1.5px] text-[#444] uppercase font-semibold" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                Distance
+              </span>
+              <span className="text-[#00E5FF] text-xl font-bold leading-none" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                {rideDetails.distance || 0} <span className="text-xs text-[#444]">km</span>
+              </span>
+            </div>
+            <div className="flex flex-col gap-0.5 pl-3 border-l border-[#1e1e1e]">
+              <span className="text-[9px] tracking-[1.5px] text-[#444] uppercase font-semibold" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                Duration
+              </span>
+              <span className="text-[#00E5FF] text-xl font-bold leading-none" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                {rideDetails.duration || 0} <span className="text-xs text-[#444]">min</span>
+              </span>
+            </div>
+            <div className="flex flex-col gap-0.5 pl-3 border-l border-[#1e1e1e]">
+              <span className="text-[9px] tracking-[1.5px] text-[#444] uppercase font-semibold" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                Riders
+              </span>
+              <span className="text-[#00E5FF] text-xl font-bold leading-none" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                {rideDetails.participantCount || 0}
+              </span>
+            </div>
+          </div>
+          
+          {/* Status Badge */}
+          <div className="pt-2 border-t border-[#1e1e1e]">
+            <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ${
+              rideDetails.status === 'active' 
+                ? 'bg-green-900/20 border border-green-500' 
+                : 'bg-yellow-900/20 border border-yellow-500'
+            }`}>
+              <span className={`w-2 h-2 rounded-full ${
+                rideDetails.status === 'active' ? 'bg-green-500' : 'bg-yellow-500'
+              }`} />
+              <span className={`text-xs font-semibold uppercase tracking-wider ${
+                rideDetails.status === 'active' ? 'text-green-400' : 'text-yellow-400'
+              }`} style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                {rideDetails.status === 'active' ? 'Ride Active - Broadcasting' : 'Waiting to Start'}
+              </span>
+            </div>
+          </div>
+          
+          {/* Start Ride Button (only for marshal when ride not started) */}
+          {rideDetails.status !== 'active' && (
+            <button
+              onClick={handleStartRide}
+              disabled={startingRide}
+              className={`w-full flex items-center justify-center gap-2.5 rounded-xl py-4 font-semibold text-base transition-all active:scale-95
+                ${startingRide
+                  ? "bg-[#0d2a2e] text-[#1a5a63] cursor-not-allowed"
+                  : "bg-[#00E5FF] text-black hover:bg-[#00E5FF]/90"
+                }`}
+              style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "1px", fontSize: "16px" }}
+            >
+              {startingRide ? "Starting..." : "🚀 Start Ride & Broadcast Location"}
+            </button>
+          )}
+        </div>
+      ) : (
+        // No ride loaded - show waiting message
+        <div className="mx-4 mb-4 bg-[#111] border border-[#1e1e1e] rounded-2xl p-8 flex flex-col items-center justify-center gap-4 min-h-[200px]">
+          <div className="text-[#444] text-6xl">📍</div>
+          <div className="text-center">
+            <p className="text-white text-lg font-semibold mb-1" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+              No Active Ride
+            </p>
+            <p className="text-[#666] text-sm">
+              Create a ride from the Group tab to get started
+            </p>
           </div>
         </div>
-      </div>
+      )}
 
       {/* MAP AREA */}
       <div className="flex-1 relative overflow-hidden">

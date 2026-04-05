@@ -1,21 +1,63 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import BottomNav from "../components/bottomNav";
 import type { NavTab } from "../components/bottomNav";
 import { getActiveTab } from "../utils/getActiveTab";
-import { createRide } from "../services/api";
-import { geocodeLocation } from "../utils/geocoding";
+import { createRide, joinRide, addRideStop } from "../services/api";
+import DualLocationPicker from "../components/DualLocationPicker";
 
 export default function SessionScreen() {
   const location = useLocation();
   const navigate = useNavigate();
   const activeTab = getActiveTab(location.pathname);
   const [code, setCode] = useState<string[]>(["", "", "", "", "", ""]);
-  const [startLocation, setStartLocation] = useState("");
-  const [endLocation, setEndLocation] = useState("");
+  
+  // Location selection state
+  const [startLocation, setStartLocation] = useState<{lat: number; lng: number; address?: string} | null>(null);
+  const [endLocation, setEndLocation] = useState<{lat: number; lng: number; address?: string} | null>(null);
+  const [stops, setStops] = useState<Array<{lat: number; lng: number; title: string; stopType: string; address?: string}>>([]);
+  const [userPosition, setUserPosition] = useState<[number, number] | null>(null);
+  
+  // Modal state
+  const [isRoutePickerOpen, setIsRoutePickerOpen] = useState(false);
+  
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [createdRideData, setCreatedRideData] = useState<any>(null);
+  
+  // Join ride state
+  const [joinCode, setJoinCode] = useState("");
+  const [joiningRide, setJoiningRide] = useState(false);
+  const [joinError, setJoinError] = useState("");
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  // Fetch user location when component mounts
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          console.log('Got initial location:', position.coords.latitude, position.coords.longitude);
+          setUserPosition([position.coords.latitude, position.coords.longitude]);
+        },
+        (error) => {
+          // Silently fall back to default location if permission denied or unavailable
+          if (error.code !== 1) { // Don't log if user denied (code 1)
+            console.error('Error getting location:', error.code, error.message);
+          }
+          setUserPosition([28.7041, 77.1025]); // Default to Delhi
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        }
+      );
+    } else {
+      // Default to Delhi if geolocation not supported
+      setUserPosition([28.7041, 77.1025]);
+    }
+  }, []);
 
   function handleCodeInput(index: number, value: string) {
     const char = value.slice(-1).toUpperCase();
@@ -32,25 +74,61 @@ export default function SessionScreen() {
       inputRefs.current[index - 1]?.focus();
     }
   }
+  
+  async function handleJoinRide() {
+    const userId = localStorage.getItem('userId');
+    if (!userId) {
+      setJoinError('Please create a profile first');
+      return;
+    }
+
+    if (!joinCode.trim() || joinCode.length !== 6) {
+      setJoinError('Please enter a valid 6-digit ride code');
+      return;
+    }
+
+    setJoiningRide(true);
+    setJoinError('');
+
+    try {
+      const response = await joinRide({
+        userId,
+        rideCode: joinCode.toUpperCase()
+      });
+
+      console.log('Joined ride:', response);
+      
+      // Save ride code and redirect to map tab
+      localStorage.setItem('currentRideCode', joinCode.toUpperCase());
+      navigate('/'); // Redirect to map tab
+    } catch (err: any) {
+      console.error('Error joining ride:', err);
+      setJoinError(err.message || 'Invalid ride code. Please check and try again.');
+    } finally {
+      setJoiningRide(false);
+    }
+  }
 
   async function handleCreateRide() {
     const userId = localStorage.getItem('userId');
     if (!userId) {
-      alert('Create profile first');
+      setError('Please create a profile first');
       return;
     }
 
-    if (!startLocation.trim() || !endLocation.trim()) {
-      setError('Please enter both start and end locations');
+    if (!startLocation || !endLocation) {
+      setError('Please select both start and end locations on the map');
       return;
     }
 
     setIsCreating(true);
     setError('');
+    setSuccessMessage(null);
 
     try {
-      const startPoint = await geocodeLocation(startLocation);
-      const endPoint = await geocodeLocation(endLocation);
+      // Format coordinates as "lat,lng" for backend
+      const startPoint = `${startLocation.lat},${startLocation.lng}`;
+      const endPoint = `${endLocation.lat},${endLocation.lng}`;
 
       const response = await createRide({
         userId,
@@ -59,11 +137,50 @@ export default function SessionScreen() {
       });
 
       console.log('Ride created:', response);
-      setStartLocation('');
-      setEndLocation('');
-    } catch (err) {
+      
+      // Add stops if any
+      if (stops.length > 0 && response.rideId) {
+        console.log(`Adding ${stops.length} stops to ride...`);
+        
+        // Add each stop sequentially
+        for (let i = 0; i < stops.length; i++) {
+          const stop = stops[i];
+          await addRideStop({
+            rideId: response.rideId,
+            title: stop.title,
+            stopType: stop.stopType as 'fuel' | 'food' | 'rest' | 'tea' | 'other',
+            stopPoint: stop.address || `${stop.lat.toFixed(6)},${stop.lng.toFixed(6)}`,
+            latitude: stop.lat.toString(),
+            longitude: stop.lng.toString(),
+            stopOrder: i + 1
+          });
+        }
+        
+        console.log('All stops added successfully');
+      }
+      
+      // Show success message with ride code only
+      setSuccessMessage(`Ride created successfully!`);
+      setCreatedRideData(response);
+      
+      // Save ride code to localStorage for map tab
+      if (response.code) {
+        localStorage.setItem('currentRideCode', response.code);
+      }
+      
+      // Clear selections after successful creation
+      setStartLocation(null);
+      setEndLocation(null);
+      setStops([]);
+      
+      // Auto-hide success message after 10 seconds
+      setTimeout(() => {
+        setSuccessMessage(null);
+        setCreatedRideData(null);
+      }, 10000);
+    } catch (err: any) {
       console.error('Error creating ride:', err);
-      setError('Failed to create ride. Please check locations and try again.');
+      setError(err.message || 'Failed to create ride. Please try again.');
     } finally {
       setIsCreating(false);
     }
@@ -78,8 +195,6 @@ export default function SessionScreen() {
     };
     navigate(routes[tab]);
   };
-
-  const codeComplete = code.every((c) => c !== "");
 
   return (
     <div
@@ -149,18 +264,26 @@ export default function SessionScreen() {
             </p>
 
             {/* Code inputs */}
-            <div className="flex gap-2">
+            <div className="flex gap-2 justify-center">
               {code.map((char, i) => (
                 <input
                   key={i}
                   ref={(el) => { inputRefs.current[i] = el; }}
                   type="text"
                   maxLength={1}
-                  value={char}
-                  onChange={(e) => handleCodeInput(i, e.target.value)}
+                  value={joinCode[i] || ''}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/[^a-zA-Z0-9]/g, ''); // Only alphanumeric
+                    const newCode = joinCode.split('');
+                    newCode[i] = value;
+                    setJoinCode(newCode.join('').slice(0, 6));
+                    if (value && i < 5) {
+                      inputRefs.current[i + 1]?.focus();
+                    }
+                  }}
                   onKeyDown={(e) => handleCodeKeyDown(i, e)}
-                  className={`flex-1 h-14 rounded-xl text-center text-xl font-bold uppercase bg-[#0A0A0A] border outline-none transition-all
-                    ${char
+                  className={`w-12 h-14 rounded-xl text-center text-xl font-bold bg-[#0A0A0A] border outline-none transition-all
+                    ${(joinCode[i])
                       ? "border-[#00E5FF] text-[#00E5FF]"
                       : "border-[#222] text-[#333]"
                     }
@@ -177,19 +300,22 @@ export default function SessionScreen() {
 
           {/* Connect button */}
           <button
-            disabled={!codeComplete}
-            className={`w-full flex items-center justify-center gap-2.5 rounded-xl py-4 font-semibold text-base transition-all
-              ${codeComplete
-                ? "bg-[#00E5FF] text-black active:scale-95"
-                : "bg-[#0d2a2e] text-[#1a5a63] cursor-not-allowed"
+            onClick={handleJoinRide}
+            disabled={joiningRide || joinCode.length !== 6}
+            className={`w-full flex items-center justify-center gap-2.5 rounded-xl py-4 font-semibold text-base transition-all active:scale-95
+              ${joiningRide || joinCode.length !== 6
+                ? "bg-[#0d2a2e] text-[#1a5a63] cursor-not-allowed"
+                : "bg-[#00E5FF] text-black hover:bg-[#00E5FF]/90"
               }`}
             style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "1px", fontSize: "16px" }}
           >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <path d="M9 2l2 5h5l-4 3 1.5 5L9 12l-4.5 3L6 10 2 7h5z" fill="currentColor"/>
-            </svg>
-            Connect to Session
+            {joiningRide ? "Joining..." : "Connect to Session"}
           </button>
+          
+          {/* Join error message */}
+          {joinError && (
+            <p className="text-red-400 text-sm text-center bg-red-900/20 border border-red-500 rounded-lg py-2">{joinError}</p>
+          )}
         </div>
 
         {/* CREATE RIDE CARD */}
@@ -211,53 +337,71 @@ export default function SessionScreen() {
               </span>
             </div>
 
-            {/* Start Location */}
+            {/* Route Selection */}
             <div>
               <p
                 className="text-[9px] tracking-[1.5px] text-[#555] uppercase font-semibold mb-2"
                 style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
               >
-                Start Location
+                Select Route on Map
               </p>
-              <input
-                type="text"
-                placeholder="Enter start location"
-                value={startLocation}
-                onChange={(e) => setStartLocation(e.target.value)}
-                className="w-full bg-[#0A0A0A] border border-[#222] rounded-xl px-4 py-3.5 text-white text-sm outline-none focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF] transition-colors placeholder:text-[#333]"
-                style={{ fontFamily: "'Barlow', sans-serif", caretColor: "#00E5FF" }}
-              />
+              <button
+                onClick={() => setIsRoutePickerOpen(true)}
+                className="w-full bg-[#0A0A0A] border border-[#222] rounded-xl px-4 py-3.5 text-left transition-all hover:border-[#00E5FF] focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF] group"
+                style={{ fontFamily: "'Barlow', sans-serif" }}
+              >
+                {startLocation && endLocation ? (
+                  <div className="space-y-2">
+                    <div className="flex items-start gap-2">
+                      <span className="w-2 h-2 rounded-full bg-green-500 mt-1"></span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[#00E5FF] text-xs font-medium">Start Point</p>
+                        <p className="text-[#888] text-xs truncate">
+                          {startLocation.address || `${startLocation.lat.toFixed(4)}, ${startLocation.lng.toFixed(4)}`}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="w-2 h-2 rounded-full bg-red-500 mt-1"></span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[#00E5FF] text-xs font-medium">End Point</p>
+                        <p className="text-[#888] text-xs truncate">
+                          {endLocation.address || `${endLocation.lat.toFixed(4)}, ${endLocation.lng.toFixed(4)}`}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-2">
+                    <p className="text-[#00E5FF] text-sm font-medium mb-1">📍 Click to select route on map</p>
+                    <p className="text-[#444] text-xs">Set both start and end points</p>
+                  </div>
+                )}
+              </button>
             </div>
 
-            {/* End Location */}
-            <div>
-              <p
-                className="text-[9px] tracking-[1.5px] text-[#555] uppercase font-semibold mb-2"
-                style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
-              >
-                End Location
-              </p>
-              <input
-                type="text"
-                placeholder="Enter end location"
-                value={endLocation}
-                onChange={(e) => setEndLocation(e.target.value)}
-                className="w-full bg-[#0A0A0A] border border-[#222] rounded-xl px-4 py-3.5 text-white text-sm outline-none focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF] transition-colors placeholder:text-[#333]"
-                style={{ fontFamily: "'Barlow', sans-serif", caretColor: "#00E5FF" }}
-              />
-            </div>
+            {/* Success message */}
+            {successMessage && createdRideData && (
+              <div className="bg-green-900/20 border border-green-500 rounded-xl p-6 space-y-3">
+                <p className="text-green-400 text-sm font-semibold text-center">{successMessage}</p>
+                <div className="text-center">
+                  <p className="text-green-500 text-xs uppercase tracking-wider mb-2" style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>Room Code</p>
+                  <p className="font-mono font-bold text-green-200 text-4xl tracking-widest">{createdRideData.code}</p>
+                </div>
+              </div>
+            )}
 
             {/* Error message */}
             {error && (
-              <p className="text-red-400 text-sm text-center">{error}</p>
+              <p className="text-red-400 text-sm text-center bg-red-900/20 border border-red-500 rounded-lg py-2">{error}</p>
             )}
 
             {/* Create Ride button */}
             <button
               onClick={handleCreateRide}
-              disabled={isCreating || !startLocation.trim() || !endLocation.trim()}
+              disabled={isCreating || !startLocation || !endLocation}
               className={`w-full flex items-center justify-center gap-2.5 rounded-xl py-4 font-semibold text-base transition-all active:scale-95
-                ${isCreating || !startLocation.trim() || !endLocation.trim()
+                ${isCreating || !startLocation || !endLocation
                   ? "bg-[#0d2a2e] text-[#1a5a63] cursor-not-allowed"
                   : "bg-[#00E5FF] text-black hover:bg-[#00E5FF]/90"
                 }`}
@@ -269,6 +413,18 @@ export default function SessionScreen() {
         </div>
 
       </div>
+
+      {/* Dual Location Picker Modal */}
+      <DualLocationPicker
+        isOpen={isRoutePickerOpen}
+        onClose={() => setIsRoutePickerOpen(false)}
+        onSelect={(start, end, selectedStops) => {
+          setStartLocation(start);
+          setEndLocation(end);
+          setStops(selectedStops);
+        }}
+        initialPosition={userPosition || [28.7041, 77.1025]}
+      />
 
       {/* BOTTOM NAV */}
       <BottomNav active={activeTab} onChange={handleTabChange} />

@@ -98,3 +98,71 @@ export async function joinRide(data: {
   }
 }
 
+export async function getRideByCode(rideCode: string) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/rides/code/${rideCode}`)
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const result = await response.json()
+    return result.data
+  } catch (error) {
+    console.error('Error getting ride details:', error)
+    throw error
+  }
+}
+
+export async function startRide(rideId: string, userId: string) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/rides/${rideId}/start`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ userId }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const result = await response.json()
+    return result.data
+  } catch (error) {
+    console.error('Error starting ride:', error)
+    throw error
+  }
+}
+
+export async function addRideStop(data: {
+  rideId: string
+  title: string
+  stopType: 'fuel' | 'food' | 'rest' | 'tea' | 'other'
+  stopPoint: string
+  latitude: string
+  longitude: string
+  stopOrder: number
+}) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/rides/stops`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const result = await response.json()
+    return result.data
+  } catch (error) {
+    console.error('Error adding ride stop:', error)
+    throw error
+  }
+}
+
