@@ -141,6 +141,8 @@ export async function getRideByCode(rideCode: string, userId?: string) {
 
 export async function startRide(rideId: string, userId: string) {
   try {
+    console.log('Starting ride:', { rideId, userId })
+    
     const response = await fetch(`${API_BASE_URL}/rides/${rideId}/start`, {
       method: 'POST',
       headers: {
@@ -149,13 +151,24 @@ export async function startRide(rideId: string, userId: string) {
       body: JSON.stringify({ userId }),
     })
 
+    const responseData = await response.json()
+    console.log('Start ride response:', JSON.stringify(responseData, null, 2))
+
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
+      // Extract detailed error message
+      let errorMessage = `HTTP error! status: ${response.status}`
+      
+      if (responseData?.data?.message) {
+        errorMessage = responseData.data.message
+      } else if (responseData?.message) {
+        errorMessage = responseData.message
+      }
+      
+      throw new Error(errorMessage)
     }
 
-    const result = await response.json()
-    return result.data
-  } catch (error) {
+    return responseData.data
+  } catch (error: any) {
     console.error('Error starting ride:', error)
     throw error
   }

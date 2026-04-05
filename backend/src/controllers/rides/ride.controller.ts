@@ -117,10 +117,16 @@ export default class RideController {
 
             const repo = new RideRepo();
             
-            // Verify user is marshal
-            const ride = await repo.getRideByCode(rideId);
+            // Verify ride exists
+            const ride = await repo.getRideById(rideId);
             if (!ride) {
                 throw new Error("Ride not found");
+            }
+            
+            // Verify user is marshal
+            const userRole = await repo.getUserRole(rideId, userId);
+            if (userRole !== 'marshal') {
+                throw new Error("Only the marshal can start the ride");
             }
 
             // Update ride status to active
