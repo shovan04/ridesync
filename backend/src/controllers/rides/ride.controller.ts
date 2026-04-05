@@ -132,6 +132,27 @@ export default class RideController {
             // Update ride status to active
             const updatedRide = await repo.startRide(rideId);
 
+            // Emit Socket.IO event to all participants in the ride
+            try {
+                const socketServer = (await import('../../services/location/socketServer.js')).default;
+                const io = socketServer.getIO();
+                
+                if (io) {
+                    // Emit to all clients in the ride room
+                    io.to(rideId).emit('rideStatusUpdate', {
+                        rideId: updatedRide?.id,
+                        status: updatedRide?.status,
+                        startedBy: userId,
+                        timestamp: new Date().toISOString()
+                    });
+                    
+                    console.log(`📡 [SOCKET] Emitted rideStatusUpdate to ride ${rideId}: status=${updatedRide?.status}`);
+                }
+            } catch (socketError) {
+                console.error('❌ [SOCKET] Failed to emit rideStatusUpdate:', socketError);
+                // Don't fail the request if socket emission fails
+            }
+
             const rideRes = new ResponseDTO();
             rideRes.setStatus(true);
             rideRes.setMessage("Ride started successfully");

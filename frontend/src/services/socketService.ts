@@ -5,6 +5,8 @@ const SOCKET_URL = 'https://bwz7qdx8-8090.inc1.devtunnels.ms';
 class SocketService {
   private socket: Socket | null = null;
   private isConnected: boolean = false;
+  private currentUserId: string | null = null;
+  private currentRideId: string | null = null;
 
   /**
    * Initialize and connect to Socket.IO server
@@ -19,6 +21,10 @@ class SocketService {
 
       console.log('Connecting to Socket.IO server...', { userId, rideId });
 
+      // Store user and ride info
+      this.currentUserId = userId;
+      this.currentRideId = rideId || null;
+
       this.socket = io(SOCKET_URL, {
         transports: ['websocket', 'polling'],
         reconnection: true,
@@ -31,17 +37,13 @@ class SocketService {
         console.log('✅ Socket connected:', this.socket?.id);
         this.isConnected = true;
 
-        // Authenticate with userId
-        this.socket?.emit('authenticate', { userId }, (response: any) => {
-          console.log('Authentication response:', response);
-          
-          // Join ride room if rideId provided
-          if (rideId && response.success) {
-            this.joinRide(rideId);
-          }
-          
-          resolve();
-        });
+        // Join ride room immediately (no authentication needed)
+        if (rideId) {
+          console.log('🚪 Auto-joining ride room after connect...');
+          this.joinRide(rideId);
+        }
+        
+        resolve();
       });
 
       // Handle connection error
@@ -78,19 +80,45 @@ class SocketService {
    */
   joinRide(rideId: string): void {
     if (!this.socket || !this.isConnected) {
-      console.error('Cannot join ride: Socket not connected');
+      console.error('❌ Cannot join ride: Socket not connected');
       return;
     }
 
-    console.log('Joining ride room:', rideId);
+    if (!this.currentUserId) {
+      console.error('❌ Cannot join ride: User ID not set');
+      return;
+    }
+
+    console.log('🚪 Joining ride room:', rideId);
+    console.log('   - User ID:', this.currentUserId);
     
-    this.socket.emit('joinRide', { rideId }, (response: any) => {
+    // Backend expects 'ride:join' event with userId and rideId
+    this.socket.emit('ride:join', { 
+      rideId, 
+      userId: this.currentUserId 
+    }, (response: any) => {
+      console.log('🚪 Join ride response:', response);
       if (response?.success) {
         console.log('✅ Successfully joined ride room:', rideId);
+        this.currentRideId = rideId;
       } else {
-        console.error('❌ Failed to join ride room:', response?.error);
+        console.error('❌ Failed to join ride room:', response?.error || response);
       }
     });
+  }
+  
+  /**
+   * Get current user ID
+   */
+  getUserId(): string | null {
+    return this.currentUserId;
+  }
+  
+  /**
+   * Get current ride ID
+   */
+  getRideId(): string | null {
+    return this.currentRideId;
   }
 
   /**

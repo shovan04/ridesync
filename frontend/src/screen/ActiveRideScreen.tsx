@@ -30,6 +30,7 @@ export default function ActiveRideScreen() {
   const [userRole, setUserRole] = useState<string | null>(null); // 'marshal' or 'rider'
   const [participants, setParticipants] = useState<any[]>([]);
   const [liveLocations, setLiveLocations] = useState<Map<string, {lat: number, lng: number, speed?: number}>>(new Map());
+  const [isBroadcasting, setIsBroadcasting] = useState(false); // Track if user is broadcasting location
   
   // Map refs
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -166,6 +167,11 @@ export default function ActiveRideScreen() {
     console.log('🔄 Updating map markers...', {
       participantsCount: participants.length,
       liveLocationsCount: liveLocations.size,
+      participants: participants.map(p => ({
+        name: p.userName,
+        role: p.role,
+        hasLocation: liveLocations.has(p.userId)
+      }))
     });
     
     // Clear existing markers
@@ -178,23 +184,40 @@ export default function ActiveRideScreen() {
     }
     
     // Create array of all riders with their locations
-    const ridersWithLocations: Array<{id: string; name: string; lat: number; lng: number; role?: string}> = [];
+    const ridersWithLocations: Array<{id: string; name: string; lat: number; lng: number; role?: string; hasLiveLocation: boolean}> = [];
     
     participants.forEach(participant => {
       const location = liveLocations.get(participant.userId);
       const isCurrentUser = participant.userId === localStorage.getItem('userId');
       
-      // Use live location if available
       if (location) {
+        // Has live location - show at actual position
         ridersWithLocations.push({
           id: participant.userId,
           name: isCurrentUser ? `${participant.userName} (You)` : participant.userName,
           lat: location.lat,
           lng: location.lng,
           role: participant.role,
+          hasLiveLocation: true,
         });
       } else {
+        // No live location yet - show at start point or hide
         console.log(`⚠️ No live location for ${participant.userName} (${participant.role})`);
+        
+        // Option: Show at start point with different marker (uncomment if desired)
+        /*
+        if (rideDetails?.startPoint) {
+          const [startLat, startLng] = rideDetails.startPoint.split(',').map(Number);
+          ridersWithLocations.push({
+            id: participant.userId,
+            name: isCurrentUser ? `${participant.userName} (You)` : participant.userName,
+            lat: startLat,
+            lng: startLng,
+            role: participant.role,
+            hasLiveLocation: false,
+          });
+        }
+        */
       }
     });
     
@@ -203,8 +226,10 @@ export default function ActiveRideScreen() {
     // Add markers for each rider
     ridersWithLocations.forEach(rider => {
       const isMarshal = rider.role === 'marshal';
+      const hasLiveLocation = rider.hasLiveLocation;
       
-      // Create custom icon based on role
+      // Create custom icon based on role and location status
+      const opacity = hasLiveLocation ? 1 : 0.5; // Dimmed if no live location
       const iconHtml = `
         <div style="
           width: ${isMarshal ? '40px' : '32px'};
@@ -218,6 +243,7 @@ export default function ActiveRideScreen() {
           justify-content: center;
           font-size: ${isMarshal ? '20px' : '16px'};
           animation: pulse 2s infinite;
+          opacity: ${opacity};
         ">
           ${isMarshal ? '👑' : '🚴'}
         </div>
@@ -238,11 +264,14 @@ export default function ActiveRideScreen() {
             <div style="color: #888; font-size: 12px; margin-top: 4px;">
               ${isMarshal ? '<span style="color: #00E5FF;">👑 Marshal</span>' : '<span style="color: #a855f7;">🚴 Rider</span>'}
             </div>
+            <div style="color: ${hasLiveLocation ? '#22c55e' : '#f59e0b'}; font-size: 11px; margin-top: 2px;">
+              ${hasLiveLocation ? '● Live' : '○ Waiting for location'}
+            </div>
           </div>
         `);
       
       markersRef.current[rider.id] = marker;
-      console.log(`✅ Marker added for: ${rider.name} at [${rider.lat}, ${rider.lng}]`);
+      console.log(`✅ Marker added for: ${rider.name} at [${rider.lat}, ${rider.lng}] ${hasLiveLocation ? '(LIVE)' : '(NO LIVE LOC)'}`);
     });
     
     // Fit map to show all markers and route
@@ -516,23 +545,33 @@ export default function ActiveRideScreen() {
   
   async function connectToSocket(userId: string, rideId: string) {
     try {
+      console.log('🔌 [SOCKET] Connecting to Socket.IO server...');
+      console.log('   - User ID:', userId);
+      console.log('   - Ride ID:', rideId);
+      
       // Connect to socket
       await socketService.connect(userId, rideId);
       
-      console.log('✅ Connected to Socket.IO');
+      console.log('✅ [SOCKET] Connected successfully');
+      console.log('   - Connected status:', socketService.connected);
       
       // Set up event listeners
       setupSocketListeners();
       
     } catch (err) {
-      console.error('❌ Failed to connect to socket:', err);
+      console.error('❌ [SOCKET] Failed to connect:', err);
     }
   }
   
   function setupSocketListeners() {
+    console.log('🔧 Setting up socket listeners...');
+    
     // Listen for ride status updates (e.g., when marshal starts the ride)
     socketService.onRideStatusUpdate((data) => {
-      console.log('📡 Ride status updated:', data);
+      console.log('📡 [SOCKET EVENT] Ride status updated:', data);
+      console.log('   - Ride ID:', data.rideId);
+      console.log('   - Status:', data.status);
+      console.log('   - Timestamp:', new Date().toISOString());
       
       // Update ride details with new status
       setRideDetails((prev: any) => prev ? {
@@ -540,24 +579,52 @@ export default function ActiveRideScreen() {
         status: data.status
       } : null);
       
-      // If ride just started, show notification
+      // If ride just started, ALL participants should start broadcasting
       if (data.status === 'active') {
-        console.log('🚀 Ride has started!');
+        console.log('🚀 [ACTION] Ride has started! All participants should broadcast location');
+        
+        const userId = localStorage.getItem('userId');
+        console.log('   - Current User ID:', userId);
+        console.log('   - Ride ID from event:', data.rideId);
+        
+        if (userId && data.rideId) {
+          console.log('   - ✅ Starting location broadcasting for this user...');
+          // Start broadcasting for everyone (marshal AND riders)
+          startLocationBroadcasting(userId, data.rideId);
+        } else {
+          console.warn('   - ❌ Missing userId or rideId, cannot start broadcasting');
+        }
       }
     });
     
     // Listen for rider location updates
     socketService.onRiderLocationUpdate((data) => {
-      console.log('📍 Location update received:', data);
+      console.log('📍 [SOCKET EVENT] Location update received:');
+      console.log('   - User ID:', data.userId);
+      console.log('   - Ride ID:', data.rideId);
+      console.log('   - Position:', { lat: data.latitude, lng: data.longitude });
+      console.log('   - Speed:', data.speed || 'N/A');
+      console.log('   - Timestamp:', new Date(data.timestamp).toISOString());
+      console.log('   - Received at:', new Date().toISOString());
       
       // Update live locations map with correct field names
       setLiveLocations((prev) => {
         const newMap = new Map(prev);
+        const previousLocation = newMap.get(data.userId);
+        
         newMap.set(data.userId, {
           lat: data.latitude,
           lng: data.longitude,
           speed: data.speed,
         });
+        
+        if (previousLocation) {
+          console.log(`   - 🔄 Updated existing location`);
+        } else {
+          console.log(`   - ✨ First location received for this user`);
+        }
+        
+        console.log(`   - Total tracked users: ${newMap.size}`);
         return newMap;
       });
     });
@@ -609,10 +676,8 @@ export default function ActiveRideScreen() {
       // Refresh ride details to get updated status
       await fetchRideDetails(rideDetails.code, userId);
       
-      // Start broadcasting location if marshal
-      if (userRole === 'marshal') {
-        startLocationBroadcasting(userId, rideDetails.rideId);
-      }
+      // Note: Location broadcasting will start automatically when ride status becomes 'active'
+      // via the socket listener (for ALL participants, not just marshal)
     } catch (err: any) {
       console.error('Error starting ride:', err);
       setError(err.message || 'Failed to start ride');
@@ -622,21 +687,46 @@ export default function ActiveRideScreen() {
   }
   
   function startLocationBroadcasting(userId: string, rideId: string) {
-    console.log('🛰️ Starting location broadcasting for marshal...');
+    if (isBroadcasting) {
+      console.log('⚠️ [BROADCAST] Already broadcasting location - skipping');
+      return;
+    }
+    
+    console.log('🛰️ [BROADCAST] Starting location broadcasting...');
+    console.log('   - User ID:', userId);
+    console.log('   - Ride ID:', rideId);
+    console.log('   - Socket connected:', socketService.connected);
+    console.log('   - Geolocation available:', !!navigator.geolocation);
+    
+    setIsBroadcasting(true);
     
     // Get current location and broadcast every 5 seconds
     const broadcastInterval = setInterval(() => {
+      console.log('⏰ [BROADCAST] Interval triggered...');
+      
       if (!socketService.connected) {
-        console.warn('Socket disconnected, stopping broadcast');
+        console.warn('❌ [BROADCAST] Socket disconnected, stopping broadcast');
         clearInterval(broadcastInterval);
+        setIsBroadcasting(false);
         return;
       }
       
       if (navigator.geolocation) {
+        console.log('📡 [BROADCAST] Requesting GPS position...');
+        
         navigator.geolocation.getCurrentPosition(
           (position) => {
             const { latitude, longitude, speed, heading, accuracy } = position.coords;
             
+            console.log('✅ [BROADCAST] Got GPS position:', {
+              latitude,
+              longitude,
+              speed: speed || 'N/A',
+              heading: heading || 'N/A',
+              accuracy: accuracy ? `${accuracy}m` : 'N/A'
+            });
+            
+            console.log('📤 [BROADCAST] Sending to backend via Socket.IO...');
             socketService.broadcastLocation({
               rideId,
               userId,
@@ -647,10 +737,12 @@ export default function ActiveRideScreen() {
               accuracy: accuracy || undefined,
             });
             
-            console.log('📍 Broadcasted location:', { latitude, longitude });
+            console.log('✅ [BROADCAST] Location sent successfully');
           },
           (error) => {
-            console.error('Error getting location for broadcast:', error);
+            console.error('❌ [BROADCAST] Error getting location:', error);
+            console.error('   - Error code:', error.code);
+            console.error('   - Error message:', error.message);
           },
           {
             enableHighAccuracy: true,
@@ -658,8 +750,12 @@ export default function ActiveRideScreen() {
             maximumAge: 0,
           }
         );
+      } else {
+        console.error('❌ [BROADCAST] Geolocation not available in this browser');
       }
     }, 5000); // Broadcast every 5 seconds
+    
+    console.log('✅ [BROADCAST] Broadcast interval set (every 5 seconds)');
     
     // Store interval ID for cleanup
     (window as any).broadcastInterval = broadcastInterval;
@@ -918,6 +1014,16 @@ export default function ActiveRideScreen() {
             >
               KM/H
             </div>
+            
+            {/* Broadcasting indicator */}
+            {isBroadcasting && (
+              <div className="mt-4 flex items-center justify-center gap-2">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                <span className="text-green-400 text-xs font-semibold" style={{ fontFamily: "'Barlow', sans-serif" }}>
+                  LIVE
+                </span>
+              </div>
+            )}
           </div>
         )}
         <RideMapModal 

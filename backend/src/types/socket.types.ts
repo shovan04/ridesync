@@ -22,6 +22,9 @@ export interface ServerToClientEvents {
   // Send initial state when user joins
   'location:initialState': (data: InitialStateResponse) => void;
   
+  // Ride status update (e.g., ride started)
+  'rideStatusUpdate': (data: { rideId: string; status: string; startedBy?: string; timestamp: string }) => void;
+  
   // User disconnected from ride
   'user:left': (data: { userId: string; rideId: string }) => void;
   

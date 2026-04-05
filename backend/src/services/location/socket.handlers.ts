@@ -82,12 +82,6 @@ function setupConnectionHandlers(
       // Send initial state to the joining user
       socket.emit('location:initialState', initialState);
 
-      // Notify other riders in the room
-      socket.to(data.rideId).emit('user:left', {
-        userId: data.userId,
-        rideId: data.rideId,
-      });
-
       console.log(`👥 Ride ${data.rideId} now has ${initialState.riders.length + 1} riders`);
     } catch (error) {
       console.error('Error handling ride:join:', error);
