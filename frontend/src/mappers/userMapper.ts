@@ -5,7 +5,7 @@ export const mapProfileToUser = (p: ProfileData): CreateUserPayload => {
   return {
     name: p.name,
     age: Number(p.age),
-    email: "test@gmail.com",
+    email: p.email,
     phone: p.phone,
     emergencyContact: p.emergencyPhone,
     address: p.address,
@@ -22,6 +22,7 @@ export const mapUserToProfile = (u: User): ProfileData => {
   return {
     name: u.name,
     age: String(u.age),
+    email: u.email,
     gender: u.gender.toLowerCase(),
     phone: u.phone,
     address: u.address,

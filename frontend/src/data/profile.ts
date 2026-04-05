@@ -7,6 +7,7 @@ export const BLOOD_GROUPS: BloodGroup[] = [
 export const defaultProfile: ProfileData = {
   name: "Md Yousuf",
   age: "",
+  email: "",
   gender: "male",
   phone: "",
   address: "",

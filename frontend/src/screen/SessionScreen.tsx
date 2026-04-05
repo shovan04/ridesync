@@ -3,14 +3,18 @@ import { useLocation, useNavigate } from "react-router-dom";
 import BottomNav from "../components/bottomNav";
 import type { NavTab } from "../components/bottomNav";
 import { getActiveTab } from "../utils/getActiveTab";
+import { createRide } from "../services/api";
+import { geocodeLocation } from "../utils/geocoding";
 
 export default function SessionScreen() {
   const location = useLocation();
   const navigate = useNavigate();
   const activeTab = getActiveTab(location.pathname);
   const [code, setCode] = useState<string[]>(["", "", "", "", "", ""]);
-  const [tripName, setTripName] = useState("");
-  const [waypoints, setWaypoints] = useState<string[]>([]);
+  const [startLocation, setStartLocation] = useState("");
+  const [endLocation, setEndLocation] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
+  const [error, setError] = useState("");
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   function handleCodeInput(index: number, value: string) {
@@ -29,8 +33,40 @@ export default function SessionScreen() {
     }
   }
 
-  function addWaypoint() {
-    setWaypoints([...waypoints, ""]);
+  async function handleCreateRide() {
+    const userId = localStorage.getItem('userId');
+    if (!userId) {
+      alert('Create profile first');
+      return;
+    }
+
+    if (!startLocation.trim() || !endLocation.trim()) {
+      setError('Please enter both start and end locations');
+      return;
+    }
+
+    setIsCreating(true);
+    setError('');
+
+    try {
+      const startPoint = await geocodeLocation(startLocation);
+      const endPoint = await geocodeLocation(endLocation);
+
+      const response = await createRide({
+        userId,
+        startPoint,
+        endPoint
+      });
+
+      console.log('Ride created:', response);
+      setStartLocation('');
+      setEndLocation('');
+    } catch (err) {
+      console.error('Error creating ride:', err);
+      setError('Failed to create ride. Please check locations and try again.');
+    } finally {
+      setIsCreating(false);
+    }
   }
 
   const handleTabChange = (tab: NavTab) => {
@@ -157,9 +193,9 @@ export default function SessionScreen() {
         </div>
 
         {/* CREATE RIDE CARD */}
-        <div className="bg-[#111] border border-[#1e1e1e] rounded-2xl p-5 flex flex-col gap-5">
-          {/* Card header */}
-          <div className="flex items-center justify-between">
+        <div className="flex-1 flex items-center justify-center px-4">
+          <div className="w-full max-w-md bg-[#111] border border-[#1e1e1e] rounded-2xl p-6 shadow-lg flex flex-col gap-4">
+            {/* Card header */}
             <div className="flex items-center gap-2.5">
               <span className="text-[#00E5FF]">
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -174,116 +210,62 @@ export default function SessionScreen() {
                 Create Ride
               </span>
             </div>
-            <span
-              className="text-[9px] tracking-[1.5px] font-semibold text-[#00E5FF] border border-[#00E5FF]/30 rounded-full px-2.5 py-1"
-              style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
-            >
-              LEAD RIDER
-            </span>
-          </div>
 
-          {/* Trip name */}
-          <div>
-            <p
-              className="text-[9px] tracking-[1.5px] text-[#555] uppercase font-semibold mb-2"
-              style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
-            >
-              Trip Name
-            </p>
-            <input
-              type="text"
-              placeholder="Midnight Run: Coastal Highway"
-              value={tripName}
-              onChange={(e) => setTripName(e.target.value)}
-              className="w-full bg-[#0A0A0A] border border-[#222] rounded-xl px-4 py-3.5 text-white text-sm outline-none focus:border-[#00E5FF] transition-colors placeholder:text-[#333]"
-              style={{ fontFamily: "'Barlow', sans-serif", caretColor: "#00E5FF" }}
-            />
-          </div>
-
-          {/* Start location */}
-          <div>
-            <p
-              className="text-[9px] tracking-[1.5px] text-[#555] uppercase font-semibold mb-2"
-              style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
-            >
-              Start Point
-            </p>
-            <div className="w-full bg-[#0A0A0A] border border-[#222] rounded-xl px-4 py-3.5 flex items-center gap-3">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
-                <circle cx="8" cy="8" r="3" stroke="#00E5FF" strokeWidth="1.5"/>
-                <circle cx="8" cy="8" r="6" stroke="#00E5FF" strokeWidth="1" strokeDasharray="2 2"/>
-              </svg>
-              <span className="text-[#888] text-sm">Current Location</span>
-            </div>
-          </div>
-
-          {/* Waypoints */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
+            {/* Start Location */}
+            <div>
               <p
-                className="text-[9px] tracking-[1.5px] text-[#555] uppercase font-semibold"
+                className="text-[9px] tracking-[1.5px] text-[#555] uppercase font-semibold mb-2"
                 style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
               >
-                Waypoints
+                Start Location
               </p>
-              <button
-                onClick={addWaypoint}
-                className="flex items-center gap-1 text-[#00E5FF] text-xs font-semibold"
-                style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "1px" }}
+              <input
+                type="text"
+                placeholder="Enter start location"
+                value={startLocation}
+                onChange={(e) => setStartLocation(e.target.value)}
+                className="w-full bg-[#0A0A0A] border border-[#222] rounded-xl px-4 py-3.5 text-white text-sm outline-none focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF] transition-colors placeholder:text-[#333]"
+                style={{ fontFamily: "'Barlow', sans-serif", caretColor: "#00E5FF" }}
+              />
+            </div>
+
+            {/* End Location */}
+            <div>
+              <p
+                className="text-[9px] tracking-[1.5px] text-[#555] uppercase font-semibold mb-2"
+                style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
               >
-                ADD STOP
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.2"/>
-                  <path d="M8 5v6M5 8h6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-                </svg>
-              </button>
+                End Location
+              </p>
+              <input
+                type="text"
+                placeholder="Enter end location"
+                value={endLocation}
+                onChange={(e) => setEndLocation(e.target.value)}
+                className="w-full bg-[#0A0A0A] border border-[#222] rounded-xl px-4 py-3.5 text-white text-sm outline-none focus:border-[#00E5FF] focus:ring-1 focus:ring-[#00E5FF] transition-colors placeholder:text-[#333]"
+                style={{ fontFamily: "'Barlow', sans-serif", caretColor: "#00E5FF" }}
+              />
             </div>
 
-            <div className="bg-[#0A0A0A] border border-[#1a1a1a] rounded-xl p-3 flex flex-col gap-2 min-h-[52px]">
-              {waypoints.length === 0 ? (
-                <div className="flex items-center gap-2 py-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#333]" />
-                  <span className="text-[#333] text-sm">No stops added yet</span>
-                </div>
-              ) : (
-                waypoints.map((wp, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#00E5FF] flex-shrink-0" />
-                    <input
-                      type="text"
-                      placeholder={`Stop ${i + 1}`}
-                      value={wp}
-                      onChange={(e) => {
-                        const updated = [...waypoints];
-                        updated[i] = e.target.value;
-                        setWaypoints(updated);
-                      }}
-                      className="flex-1 bg-transparent text-white text-sm outline-none placeholder:text-[#333]"
-                      style={{ caretColor: "#00E5FF" }}
-                    />
-                    <button
-                      onClick={() => setWaypoints(waypoints.filter((_, j) => j !== i))}
-                      className="text-[#444] hover:text-[#ff4444] transition-colors text-lg leading-none"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
+            {/* Error message */}
+            {error && (
+              <p className="text-red-400 text-sm text-center">{error}</p>
+            )}
+
+            {/* Create Ride button */}
+            <button
+              onClick={handleCreateRide}
+              disabled={isCreating || !startLocation.trim() || !endLocation.trim()}
+              className={`w-full flex items-center justify-center gap-2.5 rounded-xl py-4 font-semibold text-base transition-all active:scale-95
+                ${isCreating || !startLocation.trim() || !endLocation.trim()
+                  ? "bg-[#0d2a2e] text-[#1a5a63] cursor-not-allowed"
+                  : "bg-[#00E5FF] text-black hover:bg-[#00E5FF]/90"
+                }`}
+              style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "1px", fontSize: "16px" }}
+            >
+              {isCreating ? "Creating..." : "Create Ride"}
+            </button>
           </div>
-
-          {/* Initialize button */}
-          <button
-            className="w-full flex items-center justify-center gap-2.5 bg-[#0A0A0A] border border-[#00E5FF]/40 hover:border-[#00E5FF] text-[#00E5FF] rounded-xl py-4 font-semibold transition-all active:scale-95"
-            style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "1px", fontSize: "16px" }}
-          >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <path d="M9 1L11.5 6.5L17 7.27L13 11.14L14.09 16.59L9 13.77L3.91 16.59L5 11.14L1 7.27L6.5 6.5L9 1Z"
-                stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-            Start Ride
-          </button>
         </div>
 
       </div>
