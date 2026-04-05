@@ -1096,6 +1096,8 @@ export default function ActiveRideScreen() {
             console.log('📱 Modal showing', modalRiders.length, 'riders:', modalRiders.map(r => r.name));
             return modalRiders;
           })()}
+          startPoint={rideDetails?.startPoint}
+          endPoint={rideDetails?.endPoint}
           isOpen={mapOpen}
           onClose={() => setMapOpen(false)}
         />

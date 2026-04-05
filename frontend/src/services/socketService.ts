@@ -240,7 +240,7 @@ class SocketService {
     if (!this.socket) return;
 
     this.socket.off('rideStatusUpdate');
-    this.socket.off('riderLocationUpdate');
+    this.socket.off('location:broadcast');
     this.socket.off('participantJoined');
     this.socket.off('participantLeft');
     console.log('🔇 Removed all socket listeners');

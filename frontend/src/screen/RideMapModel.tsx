@@ -4,11 +4,75 @@ import "leaflet/dist/leaflet.css";
 import type { RideMapModalProps } from "../data/map";
 import { calculateMapCenter, createRiderMarker } from "../components/RideMapModal";
 
-export default function RideMapModal({ riders, isOpen, onClose }: RideMapModalProps) {
+export default function RideMapModal({ riders, isOpen, onClose, startPoint, endPoint }: RideMapModalProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const markersRef = useRef<{ [key: string]: L.Marker }>({});
   const routeLineRef = useRef<L.Polyline | null>(null);
+  const stopMarkersRef = useRef<Array<L.Marker | L.CircleMarker>>([]);
+
+  // Draw route on map
+  const drawRoute = (start: string, end: string) => {
+    if (!map.current) return;
+
+    // Remove existing route
+    if (routeLineRef.current) {
+      routeLineRef.current.remove();
+    }
+    stopMarkersRef.current.forEach(m => m.remove());
+    stopMarkersRef.current = [];
+
+    try {
+      const [startLat, startLng] = start.split(',').map(Number);
+      const [endLat, endLng] = end.split(',').map(Number);
+
+      if (isNaN(startLat) || isNaN(startLng) || isNaN(endLat) || isNaN(endLng)) {
+        return;
+      }
+
+      // Draw route line
+      routeLineRef.current = L.polyline(
+        [[startLat, startLng], [endLat, endLng]],
+        {
+          color: '#00E5FF',
+          weight: 4,
+          opacity: 0.8,
+          dashArray: '12, 10',
+          lineCap: 'round',
+          lineJoin: 'round',
+        }
+      ).addTo(map.current!);
+
+      // Start point marker
+      L.circleMarker([startLat, startLng], {
+        radius: 8,
+        fillColor: '#22c55e',
+        color: '#fff',
+        weight: 2,
+        opacity: 1,
+        fillOpacity: 0.9,
+      })
+        .addTo(map.current!)
+        .bindPopup('<b>🟢 Start</b>')
+        .openPopup();
+
+      // End point marker
+      L.circleMarker([endLat, endLng], {
+        radius: 8,
+        fillColor: '#ef4444',
+        color: '#fff',
+        weight: 2,
+        opacity: 1,
+        fillOpacity: 0.9,
+      })
+        .addTo(map.current!)
+        .bindPopup('<b>🔴 End</b>');
+
+      console.log('✅ Route drawn on modal map');
+    } catch (error) {
+      console.error('❌ Error drawing route:', error);
+    }
+  };
 
   useEffect(() => {
     console.log('📱 Modal useEffect triggered:', { isOpen, ridersCount: riders.length });
@@ -83,6 +147,11 @@ export default function RideMapModal({ riders, isOpen, onClose }: RideMapModalPr
         console.log(`✅ Marker added for ${rider.name} at [${rider.lat}, ${rider.lng}]`);
       });
 
+      // Draw route if start/end points provided
+      if (startPoint && endPoint) {
+        drawRoute(startPoint, endPoint);
+      }
+
       // Fit bounds to all markers
       if (riders.length > 0) {
         const bounds = L.latLngBounds(riders.map((r) => [r.lat, r.lng]));
@@ -102,7 +171,7 @@ export default function RideMapModal({ riders, isOpen, onClose }: RideMapModalPr
     return () => {
       // Cleanup is now handled in the useEffect when !isOpen
     };
-  }, [isOpen, riders]);
+  }, [isOpen, riders, startPoint, endPoint]);
 
   if (!isOpen) return null;
 
