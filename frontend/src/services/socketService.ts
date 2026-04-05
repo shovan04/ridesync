@@ -148,7 +148,16 @@ class SocketService {
       return;
     }
 
-    this.socket.emit('locationUpdate', data, (response: any) => {
+    // Convert field names to match backend expectations
+    this.socket.emit('location:update', {
+      rideId: data.rideId,
+      userId: data.userId,
+      lat: data.latitude,
+      lng: data.longitude,
+      speed: data.speed,
+      heading: data.heading,
+      accuracy: data.accuracy,
+    }, (response: any) => {
       if (response?.error) {
         console.error('Error broadcasting location:', response.error);
       }
@@ -179,8 +188,20 @@ class SocketService {
   }) => void): void {
     if (!this.socket) return;
 
-    // Listen to the actual backend event name
-    this.socket.on('location:broadcast', callback);
+    // Listen to the actual backend event name and transform field names
+    this.socket.on('location:broadcast', (backendData: any) => {
+      // Transform backend data structure to frontend expectations
+      const transformedData = {
+        userId: backendData.userId,
+        rideId: backendData.rideId,
+        latitude: backendData.lat,
+        longitude: backendData.lng,
+        speed: backendData.speed,
+        heading: backendData.heading,
+        timestamp: backendData.ts,
+      };
+      callback(transformedData);
+    });
     console.log('📡 Listening for rider location updates (location:broadcast)');
   }
 

@@ -54,16 +54,18 @@ function setupConnectionHandlers(
 ): void {
   
   // Handle ride join
-  socket.on('ride:join', async (data) => {
+  socket.on('ride:join', async (data, callback) => {
     try {
       console.log(`📍 User ${data.userId} joining ride ${data.rideId}`);
 
       // Validate data
       if (!data.userId || !data.rideId) {
-        socket.emit('error', { 
+        const errorMsg = { 
           code: 'INVALID_DATA', 
           message: 'userId and rideId are required' 
-        });
+        };
+        socket.emit('error', errorMsg);
+        if (callback) callback({ success: false, error: errorMsg.message });
         return;
       }
 
@@ -79,16 +81,32 @@ function setupConnectionHandlers(
       // Get initial state with current rider locations
       const initialState = rideStateService.getInitialState(data.rideId);
       
+      // Check ride status for frontend info
+      const repo = new RideRepo();
+      const ride = await repo.getRideById(data.rideId);
+      console.log(`   - Ride status: ${ride?.status || 'NOT_FOUND'}`);
+      
       // Send initial state to the joining user
       socket.emit('location:initialState', initialState);
+
+      // Send success callback
+      if (callback) {
+        callback({ 
+          success: true, 
+          message: 'Joined ride successfully',
+          rideStatus: ride?.status
+        });
+      }
 
       console.log(`👥 Ride ${data.rideId} now has ${initialState.riders.length + 1} riders`);
     } catch (error) {
       console.error('Error handling ride:join:', error);
-      socket.emit('error', { 
+      const errorMsg = { 
         code: 'JOIN_FAILED', 
         message: 'Failed to join ride' 
-      });
+      };
+      socket.emit('error', errorMsg);
+      if (callback) callback({ success: false, error: errorMsg.message });
     }
   });
 
@@ -97,6 +115,11 @@ function setupConnectionHandlers(
     try {
       // Validate session
       if (!session.isAuthenticated || !session.userId || !session.rideId) {
+        console.warn(`❌ [LOCATION UPDATE] Not authenticated:`, { 
+          isAuthenticated: session.isAuthenticated,
+          userId: session.userId,
+          rideId: session.rideId 
+        });
         socket.emit('error', { 
           code: 'NOT_AUTHENTICATED', 
           message: 'Must join a ride before sending location updates' 
@@ -107,11 +130,16 @@ function setupConnectionHandlers(
       const { userId, rideId } = session;
       const currentTime = Date.now();
 
+      console.log(`📨 [LOCATION UPDATE] Received from user ${userId} in ride ${rideId}`);
+      console.log(`   - Session:`, { userId, rideId, isAuthenticated: session.isAuthenticated });
+      console.log(`   - Location data:`, locationData);
+
       // Check if ride is active before broadcasting
       const repo = new RideRepo();
       const ride = await repo.getRideById(rideId);
       
       if (!ride) {
+        console.error(`❌ [LOCATION UPDATE] Ride ${rideId} not found`);
         socket.emit('error', { 
           code: 'RIDE_NOT_FOUND', 
           message: 'Ride not found' 
@@ -119,15 +147,18 @@ function setupConnectionHandlers(
         return;
       }
 
+      console.log(`   - Ride status: ${ride.status}`);
+
       if (ride.status !== 'active') {
         // Silently ignore location updates if ride hasn't started
-        console.log(`⏸️ Location update ignored - ride ${rideId} not yet started (status: ${ride.status})`);
+        console.log(`⏸️ [LOCATION UPDATE] Ignored - ride ${rideId} not yet started (status: ${ride.status})`);
         return;
       }
 
       // Validate location data
       const validation = validateLocationUpdate(locationData);
       if (!validation.valid) {
+        console.error(`❌ [LOCATION UPDATE] Invalid location data:`, validation.error);
         socket.emit('error', { 
           code: 'INVALID_LOCATION', 
           message: validation.error || 'Invalid location data' 
@@ -139,12 +170,14 @@ function setupConnectionHandlers(
       const lastLocation = rideStateService.getRiderLocation(rideId, userId);
       if (lastLocation && shouldThrottleUpdate(lastLocation.lastUpdate, currentTime)) {
         // Silently ignore throttled updates
+        console.log(`⏱️ [LOCATION UPDATE] Throttled - skipping frequent update`);
         return;
       }
 
       // Check if movement is significant (skip if < 10 meters)
       if (lastLocation && !hasSignificantMovement(lastLocation, locationData)) {
         // Silently ignore insignificant movements
+        console.log(`📏 [LOCATION UPDATE] Insignificant movement - skipping`);
         return;
       }
 
@@ -177,13 +210,20 @@ function setupConnectionHandlers(
       rideStateService.updateRiderLocation(rideId, userId, riderLocationData);
 
       // Publish to Redis for multi-server broadcast
+      console.log(`📤 [REDIS] Publishing location update to Redis...`);
       await redisPubSubService.publishLocationUpdate(broadcastData);
+      console.log(`✅ [REDIS] Published successfully`);
+
+      // ALSO emit directly to socket room (for single-server or fallback)
+      console.log(`📡 [SOCKET] Broadcasting to ride room ${rideId}...`);
+      io.to(rideId).emit('location:broadcast', broadcastData);
+      console.log(`✅ [SOCKET] Broadcast sent to room`);
 
       // Trigger gap detection
       gapDetectionService.triggerGapCheck(rideId);
 
       // Debug log
-      console.log(`📡 Location update from ${userId} in ride ${rideId}`);
+      console.log(`📡 Location update from ${userId} in ride ${rideId} - BROADCAST COMPLETE`);
     } catch (error) {
       console.error('Error handling location:update:', error);
       socket.emit('error', { 

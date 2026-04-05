@@ -137,16 +137,16 @@ export default class RideController {
                 const socketServer = (await import('../../services/location/socketServer.js')).default;
                 const io = socketServer.getIO();
                 
-                if (io) {
+                if (io && updatedRide) {
                     // Emit to all clients in the ride room
                     io.to(rideId).emit('rideStatusUpdate', {
-                        rideId: updatedRide?.id,
-                        status: updatedRide?.status,
+                        rideId: updatedRide.id,
+                        status: updatedRide.status,
                         startedBy: userId,
                         timestamp: new Date().toISOString()
                     });
                     
-                    console.log(`📡 [SOCKET] Emitted rideStatusUpdate to ride ${rideId}: status=${updatedRide?.status}`);
+                    console.log(`📡 [SOCKET] Emitted rideStatusUpdate to ride ${rideId}: status=${updatedRide.status}`);
                 }
             } catch (socketError) {
                 console.error('❌ [SOCKET] Failed to emit rideStatusUpdate:', socketError);
