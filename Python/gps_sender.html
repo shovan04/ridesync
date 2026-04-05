@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<body>
+
+<h2>📍 GPS Active</h2>
+<p id="status">Waiting...</p>
+
+<script>
+navigator.geolocation.getCurrentPosition(function(pos) {
+
+    const lat = pos.coords.latitude;
+    const lon = pos.coords.longitude;
+
+    document.getElementById("status").innerHTML =
+        "Lat: " + lat + " | Lon: " + lon;
+
+    setInterval(() => {
+        fetch("http://127.0.0.1:9000/gps", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({lat: lat, lon: lon})
+        });
+    }, 2000);
+
+});
+</script>
+
+</body>
+</html>

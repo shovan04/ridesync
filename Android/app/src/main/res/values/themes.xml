@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.CrashDetection" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#FF4444</item>
+        <item name="colorPrimaryVariant">#CC0000</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="android:windowBackground">#0D0D0D</item>
+        <item name="android:statusBarColor">#0D0D0D</item>
+        <item name="android:navigationBarColor">#0D0D0D</item>
+    </style>
+
+    <style name="SOSDialog" parent="Theme.MaterialComponents.DayNight.Dialog">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="colorPrimary">#FF4444</item>
+        <item name="buttonBarPositiveButtonStyle">@style/SOSButtonStyle</item>
+    </style>
+
+    <style name="SOSButtonStyle" parent="Widget.MaterialComponents.Button">
+        <item name="android:textColor">#44FF44</item>
+        <item name="backgroundTint">#1A3A1A</item>
+    </style>
+</resources>

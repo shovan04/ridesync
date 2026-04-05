@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Motorcycle Simulation Dashboard</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
+
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #111;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        #overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 320px;
+            background: rgba(20, 20, 20, 0.9);
+            border: 1px solid #333;
+            border-radius: 12px;
+            padding: 20px;
+            color: #fff;
+            z-index: 1000;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            align-items: center;
+        }
+        
+        .metric:last-child {
+            margin-bottom: 0;
+        }
+
+        .metric-label {
+            color: #aaa;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+        }
+
+        .metric-value {
+            font-size: 18px;
+            font-weight: bold;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .alert-box {
+            margin-top: 20px;
+            padding: 12px;
+            background: #2a2a2a;
+            border-radius: 8px;
+            text-align: center;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+
+        .alert-box.normal { background: #1b3a1b; color: #4caf50; border: 1px solid #2e7d32; }
+        .alert-box.pre-impact { background: #4a2a00; color: #ffaa00; border: 1px solid #c77200; }
+        .alert-box.impact { background: #4a0000; color: #ff3333; border: 1px solid #aa0000; animation: pulse 0.5s infinite alternate; }
+        .alert-box.sliding { background: #2a004a; color: #aa66ff; border: 1px solid #6c33aa; }
+
+        @keyframes pulse {
+            from { opacity: 1; transform: scale(1); }
+            to { opacity: 0.8; transform: scale(1.05); }
+        }
+
+        .crashing-bg {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255, 0, 0, 0.3);
+            pointer-events: none;
+            z-index: 999;
+            display: none;
+            animation: flash 0.3s infinite alternate;
+        }
+
+        @keyframes flash {
+            from { background: rgba(255, 0, 0, 0.5); }
+            to { background: rgba(255, 0, 0, 0.1); }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+    <div class="crashing-bg" id="crash-overlay"></div>
+
+    <div id="overlay">
+        <h3 style="margin-top: 0; margin-bottom: 20px; font-size: 16px; border-bottom: 1px solid #333; padding-bottom: 10px; color: #eee;">
+            Live Telemetry
+        </h3>
+        
+        <div class="metric">
+            <span class="metric-label">Speed</span>
+            <span class="metric-value" id="val-speed">0.0 km/h</span>
+        </div>
+        <div class="metric">
+            <span class="metric-label">Total Accel</span>
+            <span class="metric-value" id="val-acc">0.0 m/s²</span>
+        </div>
+        <div class="metric">
+            <span class="metric-label">Gyroscope |g|</span>
+            <span class="metric-value" id="val-gyro">0.0 °/s</span>
+        </div>
+        <div class="metric">
+            <span class="metric-label">Crash Confidence</span>
+            <span class="metric-value" id="val-conf">0%</span>
+        </div>
+
+        <div class="alert-box normal" id="status-box">
+            STATUS: STANDBY
+        </div>
+    </div>
+
+    <div id="sos-panel" style="display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); z-index: 2000; flex-direction: column; justify-content: center; align-items: center; text-align: center; color: white; backdrop-filter: blur(5px);">
+        <h1 style="color: #ff3333; font-size: 48px; margin-bottom: 20px; animation: flash 0.5s infinite alternate;">🚨 CRASH DETECTED 🚨</h1>
+        <p style="font-size: 24px;" id="sos-dispatch-text">Dispatching emergency SOS in <span id="sos-timer" style="font-weight: 900; font-size: 32px; color: #ffaa00;">10</span> seconds.</p>
+        <p style="font-size: 20px; color: #aaa; margin-bottom: 50px;">Are you safe?</p>
+        <button id="btn-safe" style="background: #4caf50; color: white; border: none; padding: 20px 40px; font-size: 24px; font-weight: bold; border-radius: 12px; cursor: pointer; box-shadow: 0 0 20px rgba(76, 175, 80, 0.4); text-transform: uppercase;">I am safe (Cancel SOS)</button>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+
+    <script>
+        const map = L.map('map').setView([22.324941, 87.323378], 14); // Kharagpur, India (default)
+
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+        }).addTo(map);
+
+        const bikeIcon = L.icon({
+            iconUrl: 'https://cdn-icons-png.flaticon.com/512/3202/3202027.png', // Motorcycle icon
+            iconSize: [36, 36],
+            iconAnchor: [18, 18]
+        });
+
+        const boomIcon = L.icon({
+            iconUrl: 'https://cdn-icons-png.flaticon.com/512/7903/7903562.png', // Explosion icon
+            iconSize: [50, 50],
+            iconAnchor: [25, 25]
+        });
+
+        let marker = L.marker([22.324941, 87.323378], {icon: bikeIcon}).addTo(map);
+        
+        let currentRoute = [];
+        let currentDistanceAlongRoute = 0; // in meters
+        let totalDistance = 0;
+        let lastTimestamp = performance.now();
+        let telemetryState = null;
+        let isCrashing = false;
+
+        let sosCountdown = 10;
+        let sosTimerInterval = null;
+        let sosActiveUI = false;
+
+        document.getElementById("btn-safe").addEventListener("click", async () => {
+            await fetch("/cancel_sos", { method: "POST" });
+            document.getElementById("sos-panel").style.display = "none";
+            sosActiveUI = false;
+            clearInterval(sosTimerInterval);
+            if (telemetryState) telemetryState.status = "Normal";
+        });
+
+        // Use Leaflet routing machine to generate a route silently
+        const control = L.Routing.control({
+            waypoints: [
+                L.latLng(22.324941, 87.323378), 
+                L.latLng(23.394217, 88.494685)
+            ],
+            routeWhileDragging: false,
+            addWaypoints: false,
+            showAlternatives: false,
+            fitSelectedRoutes: true,
+            lineOptions: {
+                styles: [{color: '#4caf50', opacity: 0.6, weight: 6}]
+            }
+        }).addTo(map);
+
+        // Hide the directions box
+        control.hide();
+
+        control.on('routesfound', function(e) {
+            const routes = e.routes;
+            const summary = routes[0].summary;
+            totalDistance = summary.totalDistance; // in meters
+            currentRoute = routes[0].coordinates; // Array of latLngs
+            
+            // Start at the beginning
+            marker.setLatLng(currentRoute[0]);
+            currentDistanceAlongRoute = 0;
+            
+            // Start moving loop
+            requestAnimationFrame(updateLoop);
+        });
+
+        function getLatLngAtDistance(distance) {
+            if (distance <= 0) return currentRoute[0];
+            if (distance >= totalDistance) return currentRoute[currentRoute.length - 1];
+
+            let distSoFar = 0;
+            for (let i = 0; i < currentRoute.length - 1; i++) {
+                const pt1 = currentRoute[i];
+                const pt2 = currentRoute[i+1];
+                const segmentDist = map.distance(pt1, pt2);
+                
+                if (distSoFar + segmentDist >= distance) {
+                    const ratio = (distance - distSoFar) / segmentDist;
+                    const lat = pt1.lat + (pt2.lat - pt1.lat) * ratio;
+                    const lng = pt1.lng + (pt2.lng - pt1.lng) * ratio;
+                    return {lat, lng};
+                }
+                
+                distSoFar += segmentDist;
+            }
+            return currentRoute[currentRoute.length - 1];
+        }
+
+        async function fetchTelemetry() {
+            try {
+                const res = await fetch("/telemetry");
+                telemetryState = await res.json();
+                
+                document.getElementById('val-speed').innerText = telemetryState.speed.toFixed(1) + " km/h";
+                document.getElementById('val-acc').innerText = telemetryState.acc.toFixed(1) + " m/s²";
+                document.getElementById('val-gyro').innerText = (telemetryState.gyro || 0).toFixed(1) + " °/s";
+                document.getElementById('val-conf').innerText = Math.round(telemetryState.confidence * 100) + "%";
+                
+                const sb = document.getElementById('status-box');
+                sb.className = "alert-box";
+                
+                let p = telemetryState.phase.toLowerCase();
+
+                if (telemetryState.status === "CRASH_DETECTED") {
+                    if (!sosActiveUI) {
+                        sosActiveUI = true;
+                        document.getElementById("sos-panel").style.display = "flex";
+                        sosCountdown = 10;
+                        document.getElementById("sos-dispatch-text").innerHTML = 'Dispatching emergency SOS in <span id="sos-timer" style="font-weight: 900; font-size: 32px; color: #ffaa00;">10</span> seconds.';
+                        document.getElementById("btn-safe").style.display = "inline-block";
+                        
+                        sosTimerInterval = setInterval(() => {
+                            sosCountdown--;
+                            if (sosCountdown <= 0) {
+                                document.getElementById("sos-dispatch-text").innerHTML = "<span style='color:#ff3333; font-weight:bold; font-size:36px; padding: 20px;'>🚨 SOS DISPATCHED 🚨</span>";
+                                document.getElementById("btn-safe").style.display = "none";
+                                clearInterval(sosTimerInterval);
+                            } else {
+                                document.getElementById("sos-timer").innerText = sosCountdown;
+                            }
+                        }, 1000);
+                    }
+                }
+
+                if (p === "normal" || p === "stationary") {
+                    sb.classList.add("normal");
+                    sb.innerText = `STATUS: ${telemetryState.phase.toUpperCase()}`;
+                    if (isCrashing || sosActiveUI) {
+                         document.getElementById("sos-panel").style.display = "none";
+                         sosActiveUI = false;
+                         clearInterval(sosTimerInterval);
+                    }
+                    isCrashing = false;
+                    document.getElementById('crash-overlay').style.display = 'none';
+                    if (marker.getIcon() === boomIcon) marker.setIcon(bikeIcon);
+                } else if (p === "pre-impact") {
+                    sb.classList.add("pre-impact");
+                    sb.innerText = "⚠️ SWERVING / BRAKING";
+                } else if (p === "impact") {
+                    sb.classList.add("impact");
+                    sb.innerText = "💥 IMPACT DETECTED!";
+                    isCrashing = true;
+                    document.getElementById('crash-overlay').style.display = 'block';
+                    marker.setIcon(boomIcon);
+                } else if (p === "sliding") {
+                    sb.classList.add("sliding");
+                    sb.innerText = "🛝 SLIDING...";
+                    isCrashing = true;
+                    document.getElementById('crash-overlay').style.display = 'block';
+                    marker.setIcon(boomIcon);
+                }
+
+                if (sosActiveUI) {
+                    sb.classList.add("impact");
+                    sb.innerText = "🚨 SOS REPORTED 🚨";
+                }
+
+            } catch(e) {
+                console.error(e);
+            }
+        }
+
+        setInterval(fetchTelemetry, 100);
+
+        function updateLoop(timestamp) {
+            const dt = (timestamp - lastTimestamp) / 1000; // seconds
+            lastTimestamp = timestamp;
+
+            if (currentRoute.length > 0 && telemetryState) {
+                // telemetryState.speed is km/h. Convert to m/s
+                const speedMs = telemetryState.speed / 3.6;
+                // update distance
+                currentDistanceAlongRoute += speedMs * dt;
+                
+                // loop around if reached end
+                if (currentDistanceAlongRoute > totalDistance) {
+                    currentDistanceAlongRoute = 0;
+                }
+
+                const newLatLng = getLatLngAtDistance(currentDistanceAlongRoute);
+                marker.setLatLng(newLatLng);
+                map.panTo(newLatLng, {animate: true, duration: dt * 1.5});
+
+                // Post the actual coordinates to the GPS server so simulator uses them!
+                fetch("/gps", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({lat: newLatLng.lat, lon: newLatLng.lng})
+                }).catch(()=>{});
+
+            }
+
+            requestAnimationFrame(updateLoop);
+        }
+
+    </script>
+
+</body>
+</html>
