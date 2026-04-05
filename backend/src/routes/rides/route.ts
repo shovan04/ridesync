@@ -11,6 +11,8 @@ const rideRouter = Router();
 
 rideRouter.post(RideRoutes.CREATE_RIDE, validateDto(CreateRideDTO), RideController.createRide)
 rideRouter.post(RideRoutes.JOIN_RIDE, validateDto(JoinRideDTO), RideController.joinRide)
+rideRouter.post(RideRoutes.START_RIDE, RideController.startRide)
+rideRouter.get(RideRoutes.GET_RIDE_BY_CODE, RideController.getRideByCode)
 rideRouter.post(RideRoutes.ADD_STOP, validateDto(CreateRideStopDTO), RideController.addRideStop)
 rideRouter.get(RideRoutes.GET_STOPS, RideController.getRideStops)
 rideRouter.delete(RideRoutes.DELETE_STOP, RideController.deleteRideStop)

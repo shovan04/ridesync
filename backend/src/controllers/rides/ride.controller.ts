@@ -10,6 +10,7 @@ import JoinRideService from "../../services/ride/joinRide.service.js";
 import CreateRideStopDTO from "../../DTOClasses/rides/createRideStop.js";
 import RideStopService from "../../services/ride/rideStop.service.js";
 import RideStopResponseDTO from "../../DTOClasses/rides/rideStopResponse.js";
+import RideRepo from "../../repositories/ride.repo.js";
 
 export default class RideController {
     public static async createRide(req: Request, res: Response) {
@@ -51,6 +52,87 @@ export default class RideController {
             errRes.setMessage("JOIN_RIDE_FAILED");
             errRes.setData(new ErrorResponseDTO(req.baseUrl, HttpResponseCode.CONFLICT, error.message));
             return res.status(HttpResponseCode.CONFLICT).json(errRes);
+        }
+    }
+
+    public static async getRideByCode(req: Request, res: Response) {
+        try {
+            const rideCode = req.params.rideCode as string;
+
+            if (!rideCode) {
+                throw new Error("Ride code is required");
+            }
+
+            const repo = new RideRepo();
+            const ride = await repo.getRideByCode(rideCode);
+
+            if (!ride) {
+                throw new Error("Ride not found");
+            }
+
+            // Get participant count
+            const participantCount = await repo.getParticipantCount(ride.id);
+
+            const rideRes = new ResponseDTO();
+            rideRes.setStatus(true);
+            rideRes.setMessage("Ride details retrieved successfully");
+            rideRes.setData({
+                rideId: ride.id,
+                code: ride.code,
+                startPoint: ride.startPoint,
+                endPoint: ride.endPoint,
+                distance: ride.distance,
+                duration: ride.duration,
+                overallSpeed: ride.overallSpeed,
+                status: ride.status,
+                participantCount,
+            });
+            
+            res.status(HttpResponseCode.OK).json(rideRes);
+        } catch (error: any & Error) {
+            const errRes = new ResponseDTO<ErrorResponseDTO>();
+            errRes.setStatus(false);
+            errRes.setMessage("GET_RIDE_FAILED");
+            errRes.setData(new ErrorResponseDTO(req.baseUrl, HttpResponseCode.NOTFOUND, error.message));
+            return res.status(HttpResponseCode.NOTFOUND).json(errRes);
+        }
+    }
+
+    public static async startRide(req: Request, res: Response) {
+        try {
+            const rideId = req.params.rideId as string;
+            const { userId } = req.body;
+
+            if (!rideId || !userId) {
+                throw new Error("Ride ID and User ID are required");
+            }
+
+            const repo = new RideRepo();
+            
+            // Verify user is marshal
+            const ride = await repo.getRideByCode(rideId);
+            if (!ride) {
+                throw new Error("Ride not found");
+            }
+
+            // Update ride status to active
+            const updatedRide = await repo.startRide(rideId);
+
+            const rideRes = new ResponseDTO();
+            rideRes.setStatus(true);
+            rideRes.setMessage("Ride started successfully");
+            rideRes.setData({
+                rideId: updatedRide?.id,
+                status: updatedRide?.status,
+            });
+            
+            res.status(HttpResponseCode.OK).json(rideRes);
+        } catch (error: any & Error) {
+            const errRes = new ResponseDTO<ErrorResponseDTO>();
+            errRes.setStatus(false);
+            errRes.setMessage("START_RIDE_FAILED");
+            errRes.setData(new ErrorResponseDTO(req.baseUrl, HttpResponseCode.BAD_REQUEST, error.message));
+            return res.status(HttpResponseCode.BAD_REQUEST).json(errRes);
         }
     }
 

@@ -1,6 +1,7 @@
 import db from "../db/index.js";
 import { rideParticipants, rides, roleEnum, rideStops } from "../db/schema.js";
 import CreateRideData from "../interfaces/createRide.interface.js";
+import { eq } from "drizzle-orm";
 
 export default class RideRepo {
 
@@ -27,6 +28,20 @@ export default class RideRepo {
         return await db.query.rides.findFirst({
             where: (t, { eq }) => eq(t.code, rideCode),
         });
+    }
+
+    async getRideById(rideId: string) {
+        return await db.query.rides.findFirst({
+            where: eq(rides.id, rideId),
+        });
+    }
+
+    async startRide(rideId: string) {
+        const [updated] = await db.update(rides)
+            .set({ status: 'active' })
+            .where(eq(rides.id, rideId))
+            .returning();
+        return updated;
     }
 
     async getParticipantCount(rideId: string): Promise<number> {

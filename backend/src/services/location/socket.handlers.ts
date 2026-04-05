@@ -10,6 +10,7 @@ import {
 import rideStateService from './rideState.service.js';
 import redisPubSubService from './redisPubSub.service.js';
 import gapDetectionService from './gapDetection.service.js';
+import RideRepo from '../../repositories/ride.repo.js';
 import { 
   validateLocationUpdate, 
   shouldThrottleUpdate,
@@ -111,6 +112,24 @@ function setupConnectionHandlers(
 
       const { userId, rideId } = session;
       const currentTime = Date.now();
+
+      // Check if ride is active before broadcasting
+      const repo = new RideRepo();
+      const ride = await repo.getRideById(rideId);
+      
+      if (!ride) {
+        socket.emit('error', { 
+          code: 'RIDE_NOT_FOUND', 
+          message: 'Ride not found' 
+        });
+        return;
+      }
+
+      if (ride.status !== 'active') {
+        // Silently ignore location updates if ride hasn't started
+        console.log(`⏸️ Location update ignored - ride ${rideId} not yet started (status: ${ride.status})`);
+        return;
+      }
 
       // Validate location data
       const validation = validateLocationUpdate(locationData);

@@ -51,6 +51,9 @@ export const rides = pgTable("rides", {
   duration: integer("duration_min").notNull().default(0),
   overallSpeed: integer("overall_speed").notNull().default(0),
 
+  // Ride status: 'created' | 'active' | 'completed'
+  status: varchar({ length: 20 }).notNull().default('created'),
+
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()
