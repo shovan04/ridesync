@@ -16,6 +16,7 @@ rideRouter.get(RideRoutes.GET_RIDE_BY_CODE, RideController.getRideByCode)
 rideRouter.post(RideRoutes.ADD_STOP, validateDto(CreateRideStopDTO), RideController.addRideStop)
 rideRouter.get(RideRoutes.GET_STOPS, RideController.getRideStops)
 rideRouter.delete(RideRoutes.DELETE_STOP, RideController.deleteRideStop)
+rideRouter.get('/participants/:rideId', RideController.getRideParticipants)
 
 
 export default rideRouter;

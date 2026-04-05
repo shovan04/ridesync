@@ -60,7 +60,7 @@ export default function SessionScreen() {
   }, []);
 
   function handleCodeInput(index: number, value: string) {
-    const char = value.slice(-1).toUpperCase();
+    const char = value.slice(-1);
     const updated = [...code];
     updated[index] = char;
     setCode(updated);
@@ -93,13 +93,13 @@ export default function SessionScreen() {
     try {
       const response = await joinRide({
         userId,
-        rideCode: joinCode.toUpperCase()
+        rideCode: joinCode
       });
 
       console.log('Joined ride:', response);
       
       // Save ride code and redirect to map tab
-      localStorage.setItem('currentRideCode', joinCode.toUpperCase());
+      localStorage.setItem('currentRideCode', joinCode);
       navigate('/'); // Redirect to map tab
     } catch (err: any) {
       console.error('Error joining ride:', err);
@@ -111,6 +111,8 @@ export default function SessionScreen() {
 
   async function handleCreateRide() {
     const userId = localStorage.getItem('userId');
+    console.log('Checking userId from localStorage:', userId);
+    
     if (!userId) {
       setError('Please create a profile first');
       return;
@@ -129,6 +131,12 @@ export default function SessionScreen() {
       // Format coordinates as "lat,lng" for backend
       const startPoint = `${startLocation.lat},${startLocation.lng}`;
       const endPoint = `${endLocation.lat},${endLocation.lng}`;
+
+      console.log('=== Creating Ride ===');
+      console.log('User ID:', userId);
+      console.log('Start Point:', startPoint);
+      console.log('End Point:', endPoint);
+      console.log('Stops count:', stops.length);
 
       const response = await createRide({
         userId,
@@ -180,7 +188,9 @@ export default function SessionScreen() {
       }, 10000);
     } catch (err: any) {
       console.error('Error creating ride:', err);
-      setError(err.message || 'Failed to create ride. Please try again.');
+      // Display detailed error message including validation errors
+      const errorMessage = err.message || 'Failed to create ride. Please try again.';
+      setError(errorMessage);
     } finally {
       setIsCreating(false);
     }
@@ -273,7 +283,7 @@ export default function SessionScreen() {
                   maxLength={1}
                   value={joinCode[i] || ''}
                   onChange={(e) => {
-                    const value = e.target.value.replace(/[^a-zA-Z0-9]/g, ''); // Only alphanumeric
+                    const value = e.target.value.replace(/[^a-zA-Z0-9]/g, ''); // Only alphanumeric (both cases)
                     const newCode = joinCode.split('');
                     newCode[i] = value;
                     setJoinCode(newCode.join('').slice(0, 6));

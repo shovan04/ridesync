@@ -1,7 +1,7 @@
 import db from "../db/index.js";
-import { rideParticipants, rides, roleEnum, rideStops } from "../db/schema.js";
+import { rideParticipants, rides, roleEnum, rideStops, users } from "../db/schema.js";
 import CreateRideData from "../interfaces/createRide.interface.js";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 export default class RideRepo {
 
@@ -86,6 +86,42 @@ export default class RideRepo {
             .where(eq(rideStops.id, stopId))
             .returning();
         return deleted[0];
+    }
+
+    async getUserRole(rideId: string, userId: string): Promise<string | null> {
+        const participant = await db.query.rideParticipants.findFirst({
+            where: and(
+                eq(rideParticipants.rideId, rideId),
+                eq(rideParticipants.userId, userId)
+            ),
+        });
+        return participant?.role || null;
+    }
+
+    async getRideParticipants(rideId: string) {
+        const participants = await db.query.rideParticipants.findMany({
+            where: eq(rideParticipants.rideId, rideId),
+        });
+        
+        // Fetch user details for each participant
+        const participantsWithDetails = await Promise.all(
+            participants.map(async (p) => {
+                const user = await db.query.users.findFirst({
+                    where: eq(users.id, p.userId),
+                });
+                
+                return {
+                    id: p.id,
+                    userId: p.userId,
+                    rideId: p.rideId,
+                    role: p.role,
+                    userName: user?.name || 'Unknown',
+                    userPhone: user?.phone || '',
+                };
+            })
+        );
+        
+        return participantsWithDetails;
     }
  
     async addRideLeader(){}

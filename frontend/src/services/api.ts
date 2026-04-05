@@ -53,6 +53,8 @@ export async function createRide(data: {
   endPoint: string
 }) {
   try {
+    console.log('Creating ride with data:', JSON.stringify(data, null, 2))
+    
     const response = await fetch(`${API_BASE_URL}/rides`, {
       method: 'POST',
       headers: {
@@ -61,13 +63,31 @@ export async function createRide(data: {
       body: JSON.stringify(data),
     })
 
+    const responseData = await response.json()
+    console.log('Backend response status:', response.status)
+    console.log('Backend response:', JSON.stringify(responseData, null, 2))
+
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
+      // Extract detailed error message from response
+      let errorMessage = `HTTP error! status: ${response.status}`
+      
+      if (responseData?.data?.errors) {
+        // Validation errors - format them nicely
+        const validationErrors = Object.entries(responseData.data.errors)
+          .map(([field, msg]) => `${field}: ${msg}`)
+          .join(', ')
+        errorMessage = `Validation failed: ${validationErrors}`
+      } else if (responseData?.data?.message) {
+        errorMessage = responseData.data.message
+      } else if (responseData?.message) {
+        errorMessage = responseData.message
+      }
+      
+      throw new Error(errorMessage)
     }
 
-    const result = await response.json()
-    return result.data
-  } catch (error) {
+    return responseData.data
+  } catch (error: any) {
     console.error('Error creating ride:', error)
     throw error
   }
@@ -98,9 +118,14 @@ export async function joinRide(data: {
   }
 }
 
-export async function getRideByCode(rideCode: string) {
+export async function getRideByCode(rideCode: string, userId?: string) {
   try {
-    const response = await fetch(`${API_BASE_URL}/rides/code/${rideCode}`)
+    const url = new URL(`${API_BASE_URL}/rides/code/${rideCode}`)
+    if (userId) {
+      url.searchParams.set('userId', userId)
+    }
+    
+    const response = await fetch(url.toString())
 
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`)
@@ -166,3 +191,18 @@ export async function addRideStop(data: {
   }
 }
 
+export async function getRideParticipants(rideId: string) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/rides/participants/${rideId}`)
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const result = await response.json()
+    return result.data
+  } catch (error) {
+    console.error('Error getting ride participants:', error)
+    throw error
+  }
+}

@@ -58,6 +58,7 @@ export default class RideController {
     public static async getRideByCode(req: Request, res: Response) {
         try {
             const rideCode = req.params.rideCode as string;
+            const userId = req.query.userId as string; // Optional: to get user role
 
             if (!rideCode) {
                 throw new Error("Ride code is required");
@@ -72,6 +73,12 @@ export default class RideController {
 
             // Get participant count
             const participantCount = await repo.getParticipantCount(ride.id);
+            
+            // Get user role if userId provided
+            let userRole = null;
+            if (userId) {
+                userRole = await repo.getUserRole(ride.id, userId);
+            }
 
             const rideRes = new ResponseDTO();
             rideRes.setStatus(true);
@@ -86,6 +93,7 @@ export default class RideController {
                 overallSpeed: ride.overallSpeed,
                 status: ride.status,
                 participantCount,
+                userRole, // Add user role to response
             });
             
             res.status(HttpResponseCode.OK).json(rideRes);
@@ -202,6 +210,32 @@ export default class RideController {
             const errRes = new ResponseDTO<ErrorResponseDTO>();
             errRes.setStatus(false);
             errRes.setMessage("DELETE_STOP_FAILED");
+            errRes.setData(new ErrorResponseDTO(req.baseUrl, HttpResponseCode.NOTFOUND, error.message));
+            return res.status(HttpResponseCode.NOTFOUND).json(errRes);
+        }
+    }
+
+    public static async getRideParticipants(req: Request, res: Response) {
+        try {
+            const rideId = req.params.rideId as string;
+
+            if (!rideId) {
+                throw new Error("Ride ID is required");
+            }
+
+            const repo = new RideRepo();
+            const participants = await repo.getRideParticipants(rideId);
+
+            const resD = new ResponseDTO();
+            resD.setStatus(true);
+            resD.setMessage("Ride participants retrieved successfully");
+            resD.setData(participants);
+            
+            res.status(HttpResponseCode.OK).json(resD);
+        } catch (error: any & Error) {
+            const errRes = new ResponseDTO<ErrorResponseDTO>();
+            errRes.setStatus(false);
+            errRes.setMessage("GET_PARTICIPANTS_FAILED");
             errRes.setData(new ErrorResponseDTO(req.baseUrl, HttpResponseCode.NOTFOUND, error.message));
             return res.status(HttpResponseCode.NOTFOUND).json(errRes);
         }

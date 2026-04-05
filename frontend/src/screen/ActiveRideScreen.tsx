@@ -6,7 +6,7 @@ import { getActiveTab } from "../utils/getActiveTab";
 import RideMapModal from "./RideMapModel";
 import type { Rider } from "../types/rider";
 import { mockRiders } from "../data/rider";
-import { getRideByCode, startRide } from "../services/api";
+import { getRideByCode, startRide, getRideParticipants, getUser } from "../services/api";
 
 export default function ActiveRideScreen() {
   const navigate = useNavigate();
@@ -21,6 +21,12 @@ export default function ActiveRideScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [startingRide, setStartingRide] = useState(false);
+  
+  // User and participants state
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [userRole, setUserRole] = useState<string | null>(null); // 'marshal' or 'rider'
+  const [participants, setParticipants] = useState<any[]>([]);
+  const [liveLocations, setLiveLocations] = useState<Map<string, {lat: number, lng: number, speed?: number}>>(new Map());
 
   useEffect(() => {
     const interval = setInterval(() => setLiveDot((v) => !v), 1000);
@@ -30,28 +36,60 @@ export default function ActiveRideScreen() {
   // Load ride code from localStorage on mount
   useEffect(() => {
     const savedRideCode = localStorage.getItem('currentRideCode');
-    if (savedRideCode) {
+    const userId = localStorage.getItem('userId');
+    
+    if (userId) {
+      fetchUserDetails(userId);
+    }
+    
+    if (savedRideCode && userId) {
       setRideCode(savedRideCode);
-      fetchRideDetails(savedRideCode);
+      fetchRideDetails(savedRideCode, userId);
     }
   }, []);
   
-  async function fetchRideDetails(code: string) {
+  async function fetchUserDetails(userId: string) {
+    try {
+      const userData = await getUser(userId);
+      setCurrentUser(userData);
+    } catch (err) {
+      console.error('Error fetching user:', err);
+    }
+  }
+  
+  async function fetchRideDetails(code: string, userId?: string) {
     if (!code.trim()) return;
     
     setLoading(true);
     setError("");
     
     try {
-      const data = await getRideByCode(code);
+      const data = await getRideByCode(code, userId);
       setRideDetails(data);
+      setUserRole(data.userRole); // Set user role from response
       localStorage.setItem('currentRideCode', code);
+      
+      // Fetch participants if we have rideId
+      if (data.rideId) {
+        await fetchParticipants(data.rideId);
+      }
     } catch (err: any) {
       console.error('Error fetching ride:', err);
       setError(err.message || 'Ride not found');
       setRideDetails(null);
+      setUserRole(null);
     } finally {
       setLoading(false);
+    }
+  }
+  
+  async function fetchParticipants(rideId: string) {
+    try {
+      const participantsData = await getRideParticipants(rideId);
+      setParticipants(participantsData);
+      console.log('Participants:', participantsData);
+    } catch (err) {
+      console.error('Error fetching participants:', err);
     }
   }
   
@@ -222,8 +260,28 @@ export default function ActiveRideScreen() {
             </div>
           </div>
           
+          {/* User Role Badge */}
+          {userRole && (
+            <div className="pt-2">
+              <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ${
+                userRole === 'marshal' 
+                  ? 'bg-blue-900/20 border border-blue-500' 
+                  : 'bg-purple-900/20 border border-purple-500'
+              }`}>
+                <span className={`w-2 h-2 rounded-full ${
+                  userRole === 'marshal' ? 'bg-blue-500' : 'bg-purple-500'
+                }`} />
+                <span className={`text-xs font-semibold uppercase tracking-wider ${
+                  userRole === 'marshal' ? 'text-blue-400' : 'text-purple-400'
+                }`} style={{ fontFamily: "'Barlow Condensed', sans-serif" }}>
+                  {userRole === 'marshal' ? '👑 Marshal (Ride Leader)' : '🚴 Rider'}
+                </span>
+              </div>
+            </div>
+          )}
+          
           {/* Start Ride Button (only for marshal when ride not started) */}
-          {rideDetails.status !== 'active' && (
+          {rideDetails.status !== 'active' && userRole === 'marshal' && (
             <button
               onClick={handleStartRide}
               disabled={startingRide}
@@ -236,6 +294,13 @@ export default function ActiveRideScreen() {
             >
               {startingRide ? "Starting..." : "🚀 Start Ride & Broadcast Location"}
             </button>
+          )}
+          
+          {/* Message for riders when ride not started */}
+          {rideDetails.status !== 'active' && userRole === 'rider' && (
+            <div className="pt-2 text-center">
+              <p className="text-[#888] text-sm italic">Waiting for marshal to start the ride...</p>
+            </div>
           )}
         </div>
       ) : (
@@ -323,9 +388,32 @@ export default function ActiveRideScreen() {
         {/* Rider chips */}
         <div className="absolute bottom-0 left-0 right-0 z-10 px-4 pb-3 pt-12 flex gap-2 items-end"
           style={{ background: "linear-gradient(to top, #0A0A0A 70%, transparent)" }}>
-          {mockRiders.map((rider) => (
-            <RiderChip key={rider.id} rider={rider} />
-          ))}
+          {participants.length > 0 ? (
+            participants.map((participant) => {
+              // Find live location for this participant
+              const location = liveLocations.get(participant.userId);
+              const isCurrentUser = participant.userId === localStorage.getItem('userId');
+              
+              return (
+                <RiderChip 
+                  key={participant.id} 
+                  rider={{
+                    id: participant.userId,
+                    name: isCurrentUser ? `${participant.userName} (You)` : participant.userName,
+                    status: 'on-route',
+                    distanceBehind: '',
+                    lat: location?.lat || 0,
+                    lng: location?.lng || 0,
+                  }} 
+                />
+              );
+            })
+          ) : (
+            // Show mock riders if no real participants yet
+            mockRiders.map((rider) => (
+              <RiderChip key={rider.id} rider={rider} />
+            ))
+          )}
         </div>
       </div>
 
