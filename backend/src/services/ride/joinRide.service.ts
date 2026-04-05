@@ -14,7 +14,30 @@ export default class JoinRideService {
             throw new Error("Ride not found with the provided code");
         }
 
-        // Check participant count
+        // Check if user is already a participant
+        const isAlreadyParticipant = await repo.isUserParticipant(ride.id, data.userId);
+        
+        if (isAlreadyParticipant) {
+            // User is already in the ride, get their role and return success
+            const userRole = await repo.getUserRole(ride.id, data.userId);
+            const currentCount = await repo.getParticipantCount(ride.id);
+            
+            console.log(`User ${data.userId} is already a ${userRole} in ride ${ride.code}`);
+            
+            return {
+                rideId: ride.id,
+                rideCode: ride.code,
+                userId: data.userId,
+                role: userRole,
+                startPoint: ride.startPoint,
+                endPoint: ride.endPoint,
+                currentParticipants: currentCount,
+                maxParticipants: MAX_PARTICIPANTS,
+                alreadyJoined: true, // Flag to indicate user was already joined
+            };
+        }
+
+        // Check participant count for new users
         const currentCount = await repo.getParticipantCount(ride.id);
         
         if (currentCount >= MAX_PARTICIPANTS) {
@@ -37,6 +60,7 @@ export default class JoinRideService {
             endPoint: ride.endPoint,
             currentParticipants: currentCount + 1,
             maxParticipants: MAX_PARTICIPANTS,
+            alreadyJoined: false,
         };
     }
 }

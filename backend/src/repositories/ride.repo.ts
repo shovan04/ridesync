@@ -98,6 +98,16 @@ export default class RideRepo {
         return participant?.role || null;
     }
 
+    async isUserParticipant(rideId: string, userId: string): Promise<boolean> {
+        const participant = await db.query.rideParticipants.findFirst({
+            where: and(
+                eq(rideParticipants.rideId, rideId),
+                eq(rideParticipants.userId, userId)
+            ),
+        });
+        return !!participant;
+    }
+
     async getRideParticipants(rideId: string) {
         const participants = await db.query.rideParticipants.findMany({
             where: eq(rideParticipants.rideId, rideId),

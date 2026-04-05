@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import BottomNav from "../components/bottomNav";
 import type { NavTab } from "../components/bottomNav";
 import { getActiveTab } from "../utils/getActiveTab";
@@ -7,6 +9,7 @@ import RideMapModal from "./RideMapModel";
 import type { Rider } from "../types/rider";
 import { mockRiders } from "../data/rider";
 import { getRideByCode, startRide, getRideParticipants, getUser } from "../services/api";
+import socketService from "../services/socketService";
 
 export default function ActiveRideScreen() {
   const navigate = useNavigate();
@@ -27,6 +30,12 @@ export default function ActiveRideScreen() {
   const [userRole, setUserRole] = useState<string | null>(null); // 'marshal' or 'rider'
   const [participants, setParticipants] = useState<any[]>([]);
   const [liveLocations, setLiveLocations] = useState<Map<string, {lat: number, lng: number, speed?: number}>>(new Map());
+  
+  // Map refs
+  const mapContainer = useRef<HTMLDivElement>(null);
+  const mapInstance = useRef<L.Map | null>(null);
+  const markersRef = useRef<{ [key: string]: L.Marker }>({});
+  const routeLineRef = useRef<L.Polyline | null>(null);
 
   useEffect(() => {
     const interval = setInterval(() => setLiveDot((v) => !v), 1000);
@@ -46,7 +55,254 @@ export default function ActiveRideScreen() {
       setRideCode(savedRideCode);
       fetchRideDetails(savedRideCode, userId);
     }
+    
+    // Cleanup socket on unmount
+    return () => {
+      socketService.removeAllListeners();
+      socketService.disconnect();
+    };
   }, []);
+  
+  // Initialize and update map when participants or live locations change
+  useEffect(() => {
+    if (!mapContainer.current || !rideDetails) return;
+    
+    // Initialize map if not already done
+    if (!mapInstance.current) {
+      initializeMap();
+    }
+    
+    // Update markers with current participants and live locations
+    updateMapMarkers();
+    
+  }, [participants, liveLocations, rideDetails]);
+  
+  // Get initial location for current user if not available
+  useEffect(() => {
+    const userId = localStorage.getItem('userId');
+    if (!userId || !rideDetails) return;
+    
+    // Check if current user already has a location
+    const currentUserLocation = liveLocations.get(userId);
+    if (!currentUserLocation && navigator.geolocation) {
+      console.log('📍 Getting initial location for current user...');
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          console.log('✅ Got initial location:', { latitude, longitude });
+          
+          // Set initial location for current user
+          setLiveLocations((prev) => {
+            const newMap = new Map(prev);
+            newMap.set(userId, { lat: latitude, lng: longitude });
+            return newMap;
+          });
+        },
+        (error) => {
+          console.error('❌ Error getting initial location:', error);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0,
+        }
+      );
+    }
+  }, [rideDetails]);
+  
+  function initializeMap() {
+    if (!mapContainer.current || mapInstance.current) return;
+    
+    console.log('🗺️ Initializing live map...');
+    
+    try {
+      // Default center (will be updated when we have locations)
+      mapInstance.current = L.map(mapContainer.current, {
+        center: [28.7041, 77.1025], // Default to Delhi
+        zoom: 13,
+        zoomControl: false,
+        attributionControl: false,
+      });
+      
+      // Dark mode tile layer
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+      }).addTo(mapInstance.current);
+      
+      console.log('✅ Map initialized successfully');
+      
+      // Force map to recalculate size
+      setTimeout(() => {
+        if (mapInstance.current) {
+          mapInstance.current.invalidateSize();
+          console.log('📐 Map size invalidated');
+        }
+      }, 100);
+    } catch (error) {
+      console.error('❌ Error initializing map:', error);
+    }
+  }
+  
+  function updateMapMarkers() {
+    if (!mapInstance.current) {
+      console.warn('⚠️ Map not initialized yet');
+      return;
+    }
+    
+    console.log('🔄 Updating map markers...', {
+      participantsCount: participants.length,
+      liveLocationsCount: liveLocations.size,
+    });
+    
+    // Clear existing markers
+    Object.values(markersRef.current).forEach(marker => marker.remove());
+    markersRef.current = {};
+    
+    // Draw route line from start to end
+    if (rideDetails?.startPoint && rideDetails?.endPoint) {
+      drawRoute(rideDetails.startPoint, rideDetails.endPoint);
+    }
+    
+    // Create array of all riders with their locations
+    const ridersWithLocations: Array<{id: string; name: string; lat: number; lng: number; role?: string}> = [];
+    
+    participants.forEach(participant => {
+      const location = liveLocations.get(participant.userId);
+      const isCurrentUser = participant.userId === localStorage.getItem('userId');
+      
+      // Use live location if available
+      if (location) {
+        ridersWithLocations.push({
+          id: participant.userId,
+          name: isCurrentUser ? `${participant.userName} (You)` : participant.userName,
+          lat: location.lat,
+          lng: location.lng,
+          role: participant.role,
+        });
+      } else {
+        console.log(`⚠️ No live location for ${participant.userName} (${participant.role})`);
+      }
+    });
+    
+    console.log(`📍 Adding ${ridersWithLocations.length} markers to map`);
+    
+    // Add markers for each rider
+    ridersWithLocations.forEach(rider => {
+      const isMarshal = rider.role === 'marshal';
+      
+      // Create custom icon based on role
+      const iconHtml = `
+        <div style="
+          width: ${isMarshal ? '40px' : '32px'};
+          height: ${isMarshal ? '40px' : '32px'};
+          border-radius: 50%;
+          background: ${isMarshal ? '#00E5FF' : '#a855f7'};
+          border: 3px solid white;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: ${isMarshal ? '20px' : '16px'};
+          animation: pulse 2s infinite;
+        ">
+          ${isMarshal ? '👑' : '🚴'}
+        </div>
+      `;
+      
+      const icon = L.divIcon({
+        html: iconHtml,
+        className: 'custom-marker',
+        iconSize: [isMarshal ? 40 : 32, isMarshal ? 40 : 32],
+        iconAnchor: [isMarshal ? 20 : 16, isMarshal ? 20 : 16],
+      });
+      
+      const marker = L.marker([rider.lat, rider.lng], { icon })
+        .addTo(mapInstance.current!)
+        .bindPopup(`
+          <div style="font-family: 'Barlow', sans-serif; padding: 8px;">
+            <div style="color: #00E5FF; font-weight: 600; font-size: 14px;">${rider.name}</div>
+            <div style="color: #888; font-size: 12px; margin-top: 4px;">
+              ${isMarshal ? '<span style="color: #00E5FF;">👑 Marshal</span>' : '<span style="color: #a855f7;">🚴 Rider</span>'}
+            </div>
+          </div>
+        `);
+      
+      markersRef.current[rider.id] = marker;
+      console.log(`✅ Marker added for: ${rider.name} at [${rider.lat}, ${rider.lng}]`);
+    });
+    
+    // Fit map to show all markers and route
+    if (ridersWithLocations.length > 0) {
+      const bounds = L.latLngBounds(ridersWithLocations.map(r => [r.lat, r.lng]));
+      mapInstance.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+      console.log('🗺️ Map fitted to show all participants');
+    } else if (rideDetails?.startPoint && rideDetails?.endPoint) {
+      // If no riders yet, fit to route
+      const [startLat, startLng] = rideDetails.startPoint.split(',').map(Number);
+      const [endLat, endLng] = rideDetails.endPoint.split(',').map(Number);
+      const routeBounds = L.latLngBounds([[startLat, startLng], [endLat, endLng]]);
+      mapInstance.current.fitBounds(routeBounds, { padding: [100, 100] });
+      console.log('🗺️ Map fitted to show route');
+    } else {
+      console.log('⚠️ No locations to display on map yet');
+    }
+  }
+  
+  function drawRoute(startPoint: string, endPoint: string) {
+    if (!mapInstance.current) return;
+    
+    // Remove existing route line
+    if (routeLineRef.current) {
+      routeLineRef.current.remove();
+    }
+    
+    try {
+      // Parse coordinates
+      const [startLat, startLng] = startPoint.split(',').map(Number);
+      const [endLat, endLng] = endPoint.split(',').map(Number);
+      
+      if (isNaN(startLat) || isNaN(startLng) || isNaN(endLat) || isNaN(endLng)) {
+        console.error('❌ Invalid route coordinates');
+        return;
+      }
+      
+      // Draw dashed route line
+      routeLineRef.current = L.polyline(
+        [[startLat, startLng], [endLat, endLng]],
+        {
+          color: '#00E5FF',
+          weight: 4,
+          opacity: 0.8,
+          dashArray: '10, 10',
+          lineCap: 'round',
+        }
+      ).addTo(mapInstance.current);
+      
+      // Add start marker
+      L.circleMarker([startLat, startLng], {
+        radius: 8,
+        fillColor: '#22c55e',
+        color: '#fff',
+        weight: 2,
+        opacity: 1,
+        fillOpacity: 0.9,
+      }).addTo(mapInstance.current).bindPopup('🟢 Start Point');
+      
+      // Add end marker
+      L.circleMarker([endLat, endLng], {
+        radius: 8,
+        fillColor: '#ef4444',
+        color: '#fff',
+        weight: 2,
+        opacity: 1,
+        fillOpacity: 0.9,
+      }).addTo(mapInstance.current).bindPopup('🔴 End Point');
+      
+      console.log('✅ Route drawn from start to end');
+    } catch (error) {
+      console.error('❌ Error drawing route:', error);
+    }
+  }
   
   async function fetchUserDetails(userId: string) {
     try {
@@ -72,6 +328,11 @@ export default function ActiveRideScreen() {
       // Fetch participants if we have rideId
       if (data.rideId) {
         await fetchParticipants(data.rideId);
+        
+        // Connect to Socket.IO for real-time updates
+        if (userId) {
+          await connectToSocket(userId, data.rideId);
+        }
       }
     } catch (err: any) {
       console.error('Error fetching ride:', err);
@@ -93,6 +354,82 @@ export default function ActiveRideScreen() {
     }
   }
   
+  async function connectToSocket(userId: string, rideId: string) {
+    try {
+      // Connect to socket
+      await socketService.connect(userId, rideId);
+      
+      console.log('✅ Connected to Socket.IO');
+      
+      // Set up event listeners
+      setupSocketListeners();
+      
+    } catch (err) {
+      console.error('❌ Failed to connect to socket:', err);
+    }
+  }
+  
+  function setupSocketListeners() {
+    // Listen for ride status updates (e.g., when marshal starts the ride)
+    socketService.onRideStatusUpdate((data) => {
+      console.log('📡 Ride status updated:', data);
+      
+      // Update ride details with new status
+      setRideDetails((prev: any) => prev ? {
+        ...prev,
+        status: data.status
+      } : null);
+      
+      // If ride just started, show notification
+      if (data.status === 'active') {
+        console.log('🚀 Ride has started!');
+      }
+    });
+    
+    // Listen for rider location updates
+    socketService.onRiderLocationUpdate((data) => {
+      console.log('📍 Location update received:', data);
+      
+      // Update live locations map
+      setLiveLocations((prev) => {
+        const newMap = new Map(prev);
+        newMap.set(data.userId, {
+          lat: data.latitude,
+          lng: data.longitude,
+          speed: data.speed,
+        });
+        return newMap;
+      });
+    });
+    
+    // Listen for participant joined
+    socketService.onParticipantJoined((data) => {
+      console.log('👤 Participant joined:', data);
+      
+      // Refresh participants list
+      if (rideDetails?.rideId) {
+        fetchParticipants(rideDetails.rideId);
+      }
+    });
+    
+    // Listen for participant left
+    socketService.onParticipantLeft((data) => {
+      console.log('👋 Participant left:', data);
+      
+      // Remove from live locations
+      setLiveLocations((prev) => {
+        const newMap = new Map(prev);
+        newMap.delete(data.userId);
+        return newMap;
+      });
+      
+      // Refresh participants list
+      if (rideDetails?.rideId) {
+        fetchParticipants(rideDetails.rideId);
+      }
+    });
+  }
+  
   function handleSearchRide() {
     fetchRideDetails(rideCode);
   }
@@ -110,13 +447,62 @@ export default function ActiveRideScreen() {
     try {
       await startRide(rideDetails.rideId, userId);
       // Refresh ride details to get updated status
-      await fetchRideDetails(rideDetails.code);
+      await fetchRideDetails(rideDetails.code, userId);
+      
+      // Start broadcasting location if marshal
+      if (userRole === 'marshal') {
+        startLocationBroadcasting(userId, rideDetails.rideId);
+      }
     } catch (err: any) {
       console.error('Error starting ride:', err);
       setError(err.message || 'Failed to start ride');
     } finally {
       setStartingRide(false);
     }
+  }
+  
+  function startLocationBroadcasting(userId: string, rideId: string) {
+    console.log('🛰️ Starting location broadcasting for marshal...');
+    
+    // Get current location and broadcast every 5 seconds
+    const broadcastInterval = setInterval(() => {
+      if (!socketService.connected) {
+        console.warn('Socket disconnected, stopping broadcast');
+        clearInterval(broadcastInterval);
+        return;
+      }
+      
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const { latitude, longitude, speed, heading, accuracy } = position.coords;
+            
+            socketService.broadcastLocation({
+              rideId,
+              userId,
+              latitude,
+              longitude,
+              speed: speed || undefined,
+              heading: heading || undefined,
+              accuracy: accuracy || undefined,
+            });
+            
+            console.log('📍 Broadcasted location:', { latitude, longitude });
+          },
+          (error) => {
+            console.error('Error getting location for broadcast:', error);
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0,
+          }
+        );
+      }
+    }, 5000); // Broadcast every 5 seconds
+    
+    // Store interval ID for cleanup
+    (window as any).broadcastInterval = broadcastInterval;
   }
 
   const handleTabChange = (tab: NavTab) => {
@@ -134,6 +520,18 @@ export default function ActiveRideScreen() {
       className="flex flex-col w-full h-screen bg-[#0A0A0A] overflow-hidden"
       style={{ fontFamily: "'Barlow', sans-serif" }}
     >
+      <style>{`
+        @keyframes pulse {
+          0%, 100% {
+            transform: scale(1);
+            opacity: 1;
+          }
+          50% {
+            transform: scale(1.1);
+            opacity: 0.8;
+          }
+        }
+      `}</style>
       {/* TOP BAR */}
       <div className="flex items-center justify-between px-5 pt-10 pb-3">
         <button className="flex flex-col gap-1.5">
@@ -319,71 +717,67 @@ export default function ActiveRideScreen() {
       )}
 
       {/* MAP AREA */}
-      <div className="flex-1 relative overflow-hidden">
-        {/* Map background */}
-        <div className="absolute inset-0 bg-[#0d0d0d]">
-          <svg
-            className="absolute inset-0 w-full h-full"
-            viewBox="0 0 390 260"
-            xmlns="http://www.w3.org/2000/svg"
-            preserveAspectRatio="xMidYMid slice"
-          >
-            {/* Topo contour lines */}
-            {[
-              "M-20,240 Q60,180 140,200 Q220,220 300,160 Q360,120 420,140",
-              "M-20,210 Q80,155 160,175 Q240,195 310,135 Q370,100 430,120",
-              "M-20,180 Q90,130 170,148 Q250,168 330,110 Q385,78 440,98",
-              "M-20,150 Q100,108 180,122 Q260,140 340,85 Q395,55 445,75",
-              "M-20,270 Q50,215 130,228 Q210,245 285,185 Q350,145 415,162",
-              "M30,290 Q90,240 160,258 Q230,278 300,210 Q360,168 420,188",
-            ].map((d, i) => (
-              <path key={i} d={d} stroke="#161616" strokeWidth="1.5" fill="none" />
-            ))}
-            {/* Road base */}
-            <path
-              d="M195,260 Q195,200 200,170 Q208,140 220,110 Q235,80 260,55"
-              stroke="#222"
-              strokeWidth="12"
-              fill="none"
-              strokeLinecap="round"
-            />
-            {/* Dashed route */}
-            <path
-              d="M195,260 Q195,200 200,170 Q208,140 220,110 Q235,80 260,55"
-              stroke="#00E5FF"
-              strokeWidth="2.5"
-              fill="none"
-              strokeLinecap="round"
-              strokeDasharray="8 10"
-            />
-            {/* Rider position */}
-            <circle cx="200" cy="175" r="8" fill="#00E5FF" opacity="0.2" />
-            <circle cx="200" cy="175" r="5" fill="#00E5FF" />
-            <circle cx="200" cy="175" r="2.5" fill="#fff" />
-          </svg>
-        </div>
+      <div className="flex-1 relative overflow-hidden" style={{ minHeight: '300px' }}>
+        {/* Live Leaflet Map */}
+        {rideDetails && (
+          <div 
+            ref={mapContainer} 
+            className="absolute inset-0 bg-[#0d0d0d]"
+            style={{ width: '100%', height: '100%' }}
+            onClick={() => setMapOpen(true)}
+          />
+        )}
+        
+        {/* Fallback for no ride */}
+        {!rideDetails && (
+          <div className="absolute inset-0 bg-[#0d0d0d] flex items-center justify-center">
+            <div className="text-center">
+              <div className="text-[#444] text-6xl mb-4">🗺️</div>
+              <p className="text-[#666] text-sm">Join a ride to see the live map</p>
+            </div>
+          </div>
+        )}
 
-        {/* Speed overlay */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[55%] text-center z-10"
-         onClick={() => setMapOpen(true)}>
-          <div
-            className="text-white leading-none"
-            style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "96px", letterSpacing: "-2px" }}
-          >
-            82
+        {/* Speed overlay (clickable to open full map) */}
+        {rideDetails && rideDetails.status === 'active' && (
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[55%] text-center z-10 pointer-events-none">
+            <div
+              className="text-white leading-none drop-shadow-lg"
+              style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: "96px", letterSpacing: "-2px" }}
+            >
+              82
+            </div>
+            <div
+              className="text-[#00E5FF] text-base font-semibold tracking-[3px] -mt-2 drop-shadow-lg"
+              style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+            >
+              KM/H
+            </div>
           </div>
-          <div
-            className="text-[#00E5FF] text-base font-semibold tracking-[3px] -mt-2"
-            style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
-          >
-            KM/H
-          </div>
-        </div>
+        )}
         <RideMapModal 
-          riders={mockRiders}
+          riders={(() => {
+            // Build riders array for modal
+            const modalRiders = participants
+              .map(p => {
+                const location = liveLocations.get(p.userId);
+                const isCurrentUser = p.userId === localStorage.getItem('userId');
+                return {
+                  id: p.userId,
+                  name: isCurrentUser ? `${p.userName} (You)` : p.userName,
+                  lat: location?.lat || 0,
+                  lng: location?.lng || 0,
+                  status: 'on-route' as const,
+                };
+              })
+              .filter(r => r.lat !== 0 && r.lng !== 0); // Only show riders with locations
+            
+            console.log('📱 Modal showing', modalRiders.length, 'riders:', modalRiders.map(r => r.name));
+            return modalRiders;
+          })()}
           isOpen={mapOpen}
-        onClose={() => setMapOpen(false)}
-/>
+          onClose={() => setMapOpen(false)}
+        />
 
         {/* Rider chips */}
         <div className="absolute bottom-0 left-0 right-0 z-10 px-4 pb-3 pt-12 flex gap-2 items-end"

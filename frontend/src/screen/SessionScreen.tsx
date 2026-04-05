@@ -98,6 +98,11 @@ export default function SessionScreen() {
 
       console.log('Joined ride:', response);
       
+      // Show message if already joined
+      if (response.alreadyJoined) {
+        console.log(`Already a ${response.role} in this ride`);
+      }
+      
       // Save ride code and redirect to map tab
       localStorage.setItem('currentRideCode', joinCode);
       navigate('/'); // Redirect to map tab
